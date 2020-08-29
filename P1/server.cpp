@@ -176,14 +176,10 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   // This assumes that the supplied command has no parameters
   if((tokens[0].compare("SYS") == 0) && (tokens.size() >= 2))
   {
-    //  std::string ble = ""& append(tokens[1].c_str(), size_of(tokens[1].c_str()), size_of(tokens[1].c_str()));     
-    //  system((tokens[1].c_str()) += " >> testFile.txt");
-    //  system(tokens[1].c_str());
-    
-    std::string temp = exec(tokens[1].c_str());
-    strcpy(buffer, temp.c_str());
 
-    send(clientSocket, buffer, sizeof(buffer), 0);
+    std::string response = exec(tokens[1].c_str());
+
+    send(clientSocket, response.c_str(), 1024, 0);
   }
   else
   {
