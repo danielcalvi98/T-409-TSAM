@@ -145,6 +145,19 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds)
      FD_CLR(clientSocket, openSockets);
 }
 
+std::string exec(const char* cmd) {
+    std::array<char, 128> buffer;
+    std::string result;
+    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    if (!pipe) {
+        throw std::runtime_error("popen() failed!");
+    }
+    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
+        result += buffer.data();
+    }
+    return result;
+}
+
 // Process any message received from client on the server
 
 void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, 
@@ -163,7 +176,14 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   // This assumes that the supplied command has no parameters
   if((tokens[0].compare("SYS") == 0) && (tokens.size() >= 2))
   {
-     system(tokens[1].c_str());
+    //  std::string ble = ""& append(tokens[1].c_str(), size_of(tokens[1].c_str()), size_of(tokens[1].c_str()));     
+    //  system((tokens[1].c_str()) += " >> testFile.txt");
+    //  system(tokens[1].c_str());
+    
+    std::string temp = exec(tokens[1].c_str());
+    strcpy(buffer, temp.c_str());
+
+    send(clientSocket, buffer, sizeof(buffer), 0);
   }
   else
   {

@@ -47,7 +47,6 @@ int establish_connection(char ip_addr[], char port[]) {
     return 0;
 }
 
-
 int main(int argc, char* argv[]) {
     
     if(argc != 3) {
@@ -58,7 +57,13 @@ int main(int argc, char* argv[]) {
     establish_connection(argv[1], argv[2]);
 
 
-    char cmd[32] = "SYS ls";
-    send(sock, cmd, sizeof(cmd), 0);
+    while (1) {
+        char input[32];
+        std::cin.getline(input, sizeof(input));
 
+        send(sock, input, sizeof(input), 0);
+        recv(sock, buffer, sizeof(buffer), 0);
+        std::cout << buffer << std::endl;  
+        
+    }
 }
