@@ -183,7 +183,9 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   }
   else
   {
-      std::cout << "Unknown command from client:" << buffer << std::endl;
+      std::string response = "Unknown command:";
+      response += buffer;
+      send(clientSocket, response.c_str(), 1024, 0);
   }
 }
 
