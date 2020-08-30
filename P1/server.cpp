@@ -7,6 +7,8 @@
 //
 // Author: Jacky Mallett (jacky@ru.is)
 //
+// Modified by: Ymir Thorleifsson (ymir19@ru.is)
+//
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -146,27 +148,34 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds)
 }
 
 
-/*
-Code from stackoverflow.com/questions/478898
-Used to convert command to string so I can send it to client.
-*/
+std::string exec(std::string command) {
 
-std::string exec(const char* cmd) {
-    std::array<char, 128> buffer;
-    std::string result;
-    std::unique_ptr<FILE, decltype(&pclose)> pipe(popen(cmd, "r"), pclose);
+    // Code from: https://www.tutorialspoint.com/How-to-execute-a-command-and-get-the-output-of-command-within-Cplusplus-using-POSIX
+    // Used to convert command to string so It can be sent to client.
+
+    char buffer[128];
+    std::string result = "";
+    
+    // Open pipe to file
+    FILE* pipe = popen(command.c_str(),"r");
     if (!pipe) {
-        throw std::runtime_error("popen() failed!");
+        return "popen failed!";
     }
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr) {
-        result += buffer.data();
+
+    // read till end of process:
+    while (!feof(pipe)) {
+        
+        // use buffer to read and add to result
+        if (fgets(buffer, 128, pipe) != NULL)
+            result += buffer;
     }
+    pclose(pipe);
     return result;
 }
 
 // Process any message received from client on the server
 
-void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, 
+std::string clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, 
                   char *buffer) 
 {
   std::vector<std::string> tokens;     // List of tokens in command from client
@@ -182,16 +191,13 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   // This assumes that the supplied command has no parameters
   if((tokens[0].compare("SYS") == 0) && (tokens.size() >= 2))
   {
-    // Gets output of terminal as a string
-    std::string response = exec(tokens[1].c_str());
-    send(clientSocket, response.c_str(), 1024, 0);
+    return exec(tokens[1].c_str());
   }
   else
   {
-      // Sends if unknown command
       std::string response = "Unknown command:";
       response += buffer;
-      send(clientSocket, response.c_str(), 1024, 0);
+      return response;
   }
 }
 
@@ -216,7 +222,7 @@ int main(int argc, char* argv[])
         exit(0);
     }
 
-    // Setup socket for server to listen to
+    // Setup socket for server to listen to 
 
     listenSock = open_socket(atoi(argv[1])); 
 
@@ -286,8 +292,16 @@ int main(int argc, char* argv[])
                       else
                       {
                           std::cout << buffer << std::endl;
-                          clientCommand(client->sock, &openSockets, &maxfds, 
-                                        buffer);
+                          std::string response = clientCommand(client->sock, &openSockets, &maxfds, buffer);
+
+                          // If command cannot excecute command it returns empty
+                          if (response == "") {
+                              response = "Command not reconiized:";
+                              response += buffer;
+                          }
+
+                          send(client->sock, response.c_str(), 1025, 0);
+                        
                       }
                   }
                }
