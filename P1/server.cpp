@@ -191,7 +191,18 @@ std::string clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   // This assumes that the supplied command has no parameters
   if((tokens[0].compare("SYS") == 0) && (tokens.size() >= 2))
   {
-    return exec(tokens[1].c_str());
+    std::string command;
+    bool first = true;              // To skip over first token ('SYS')
+    for (std::string i: tokens) {
+        if (first) {
+            first = false;
+        } else {
+            command += i;
+            command += " ";
+        }
+    }
+    std::cout << command;
+    return exec(command.c_str());
   }
   else
   {
