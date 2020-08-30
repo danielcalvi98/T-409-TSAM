@@ -145,6 +145,12 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds)
      FD_CLR(clientSocket, openSockets);
 }
 
+
+/*
+Code from stackoverflow.com/questions/478898
+Used to convert command to string so I can send it to client.
+*/
+
 std::string exec(const char* cmd) {
     std::array<char, 128> buffer;
     std::string result;
@@ -176,13 +182,13 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds,
   // This assumes that the supplied command has no parameters
   if((tokens[0].compare("SYS") == 0) && (tokens.size() >= 2))
   {
-
+    // Gets output of terminal as a string
     std::string response = exec(tokens[1].c_str());
-
     send(clientSocket, response.c_str(), 1024, 0);
   }
   else
   {
+      // Sends if unknown command
       std::string response = "Unknown command:";
       response += buffer;
       send(clientSocket, response.c_str(), 1024, 0);
