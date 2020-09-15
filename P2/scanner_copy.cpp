@@ -46,9 +46,9 @@ int main(int argc, char* argv[]) {
 
     int sock;
     struct timeval tv;
+    int opt;
 
-    char buffer[1024];                                 
-    char msg[16];
+    char buffer[1024], msg[512];
     strcpy(msg, "knock");
     
     std::ofstream openports;
@@ -59,13 +59,20 @@ int main(int argc, char* argv[]) {
         printf("Sending UDP package to port %d: ", port);
 
 
-        if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        if ((sock = socket(AF_INET, SOCK_RAW, IPPROTO_UDP)) < 0) {
             perror("Failed to make socket");
             close(sock);
-            exit(-1);
+            exit(0);
         }
+
+        struct ip *iph = (struct ip *) msg;
+
         tv.tv_sec = 1;
         setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        if (setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &opt, sizeof(opt)) < 0) {
+            perror("setsocketopt IP_HDRINCL failed");
+            exit(0);
+        }
 
         struct sockaddr_in server_address;
         server_address.sin_family       = AF_INET;
@@ -74,7 +81,7 @@ int main(int argc, char* argv[]) {
 
         if (sendto(sock, msg, sizeof(msg), 0x0, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
             perror("failed to send");
-            exit(-1);
+            exit(0);
         }
 
         
@@ -89,5 +96,5 @@ int main(int argc, char* argv[]) {
         close(sock);
     }
     // openports.close();
-    return 0;
+    return(1);
 }
