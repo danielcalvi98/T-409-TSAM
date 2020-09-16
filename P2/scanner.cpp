@@ -1,93 +1,50 @@
-/* 
-=====================================
-            PORT SCANNER
-=====================================
-              Authors:
-        Kristofer Robertsson
-          Ymir Thorleifsson
-=====================================
-  - 60% of the time it works
-    every time 
-
-*/
-
-
 #include <sys/socket.h>
-#include <sys/types.h>
-#include <arpa/inet.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
 #include <netinet/in.h>
-
-#include <iostream>
+#include <arpa/inet.h>
 #include <string.h>
+#include <stdio.h>
 
-#include <sys/socket.h>
-#include <netinet/ip.h>
-#include <netinet/udp.h>
+#define BUFFERSIZE 1024
 
-#include <fstream>
+int main(int argc, char *argv []) {
 
+    int udp_sock;
+    int low  = 4000;
+    int high = 4100;
+    char buffer[BUFFERSIZE];
+    int length;
+    struct sockaddr_in destaddr;
+    struct timeval timeout;
 
-int main(int argc, char* argv[]) {
-    if(argc != 4) {
-        printf("Usage: ./scanner <IP address>" 
-               " <low port> <high port>\n");
-        exit(0);
+    if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("Unable to open socket");
+        return(-1);
     }
-    /* Inputs */
-    char* ip_addr = argv[1];                             
-    int port_low;   sscanf(argv[2], "%d", &port_low);   
-    int port_high;  sscanf(argv[3], "%d", &port_high);   
-    
-    printf("Port scanning IP %s, from ports %d to %d\n", 
-            ip_addr, port_low, port_high);
 
-    int sock;
-    struct timeval tv;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 200;
+    setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
 
-    char buffer[1024];                                 
-    char msg[16];
-    strcpy(msg, "knock");
-    
-    std::ofstream openports;
-    // openports.open("open_ports.txt");
+    destaddr.sin_family = AF_INET;
+    inet_aton("130.208.243.61", &destaddr.sin_addr);
 
-    for (int port = port_low; port <= port_high; port++) {
+    for (int port = low; port <= high; port++) {
+        destaddr.sin_port = htons(port);
 
-        printf("Sending UDP package to port %d: ", port);
+        strcpy(buffer, "knock");
+        length = strlen(buffer) + 1;
 
-
-        if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-            perror("Failed to make socket");
-            close(sock);
-            exit(-1);
+        if (sendto(udp_sock, buffer, length, 0x0, (const struct sockaddr *) &destaddr, sizeof(destaddr)) < 0) {
+            printf("Failed to send to port %d", port);
+            perror("");
         }
-        tv.tv_sec = 1;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-
-        struct sockaddr_in server_address;
-        server_address.sin_family       = AF_INET;
-        server_address.sin_port         = htons(port);
-        server_address.sin_addr.s_addr  = inet_addr(ip_addr);
-
-        if (sendto(sock, msg, sizeof(msg), 0x0, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
-            perror("failed to send");
-            exit(-1);
-        }
-
-        
-        int msg_len = recvfrom(sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
-
-        if (msg_len <= 0) {
-            printf("CLOSED\n");
+        bzero(buffer, length);
+        if (length = recvfrom(udp_sock, buffer, BUFFERSIZE, 0x0, NULL, NULL) > 0) {
+            printf("Port %d: OPEN\n", port);
+            bzero(buffer, length);
         } else {
-            // openports << port << std::endl;
-            printf("OPEN\n");
+            printf("Port %d: CLOSED\n", port);
         }
-        close(sock);
     }
-    // openports.close();
-    return 0;
+    return(1);
 }
