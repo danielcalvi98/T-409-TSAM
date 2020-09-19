@@ -36,6 +36,8 @@ My boss told me not to tell anyone that my secret port is 4002
 #include <iostream>
 #include <fstream>
 
+#include <scanner.cpp>
+
 int send_to_server(char* buffer, int bufferlen, char* message, int socket, sockaddr_in servaddr, int port) {
     /* Set server port */
     servaddr.sin_port = htons(port);
@@ -83,8 +85,8 @@ int main(int argc, char* argv[]) {
     int     port;
     int     known_ports = 4;
     int     ports_found = 0;
-    char    write_to_file[known_ports][1024];
-    int     tries = 2;
+    char    messages[known_ports][1024];
+    int     tries = 1;
 
     struct sockaddr_in  destaddr;
     struct timeval      timeout;
@@ -98,19 +100,20 @@ int main(int argc, char* argv[]) {
 
     /* Set timeout to one micro second */
     timeout.tv_sec = 0;
-    timeout.tv_usec = 1;
+    timeout.tv_usec = 100;
     setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
 
     /* Set server address */
     destaddr.sin_family = AF_INET;
     inet_aton(address, &destaddr.sin_addr);
 
-    while (ports_found < known_ports) {
+    /* Get messages from ports */
+    // while (ports_found < known_ports) {
         ports_found = 0;
 
         /* Clear write to file array */
         for (int i = 0; i < known_ports; i++) {
-            bzero(write_to_file[i], sizeof(write_to_file[i]));
+            bzero(messages[i], sizeof(messages[i]));
         }
         /* Get ports */
         printf("Running port scanner:\n");
@@ -120,8 +123,9 @@ int main(int argc, char* argv[]) {
         bool stop = false;
         while (openports >> port) {
             if (stop) {
-                break;
+                break; // Quit if no message was got
             }
+            /* Send a few tries */
             for (int i = 0; i < tries; i++) {
                 int status = send_to_server(buffer, sizeof(buffer), "knock", udp_sock, destaddr, port);
                 if (status > 0) {
@@ -129,13 +133,13 @@ int main(int argc, char* argv[]) {
                     message = std::to_string(port);
                     message += ": ";
                     message += buffer;
-                    strcpy(write_to_file[ports_found], message.c_str());
+                    strcpy(messages[ports_found], message.c_str());
                     bzero(buffer, sizeof(buffer));
                     ports_found++;
 
-                    break;
+                    break; // Continue with next port
                 } 
-                stop = true;
+                stop = true; // Ports have changed so we move on
                 break;
             }
         }
@@ -143,27 +147,22 @@ int main(int argc, char* argv[]) {
         if (ports_found < known_ports) {
             printf("Trying again...\n");
         }
-    }
+    // }
     
     /* Save to file */
-    std::ofstream messages;
-    messages.open("ports_messages.txt");
+    std::ofstream messages_file;
+    messages_file.open("ports_messages.txt");
     printf("Messages:\n");
     for (int message = 0; message < known_ports; message++) {
-        messages << write_to_file[message] << std::endl;
-        // printf("%s\n", write_to_file[message], sizeof(write_to_file[message]));
-        std::string the_message(write_to_file[message], sizeof(write_to_file[message]));
-        size_t space_pos = the_message.find(" ");
+        messages_file << messages[message] << std::endl;
 
-        std::string p;
-        
-        if (space_pos != std::string::npos) {
-            p = the_message.substr(0, 4);
-            the_message = the_message.substr(space_pos + 1);
-        }
-        int port = atoi(p.c_str()); 
-        printf("%s\n", the_message.c_str());
-        if (the_message.find("$group_#$")) {
+        std::string the_message(messages[message], sizeof(messages[message]));
+
+        port        = atoi(the_message.substr(0, 4).c_str());
+        the_message = the_message.substr(6);
+
+        printf("%d %s\n", port, the_message.c_str());
+        if (the_message.find("$group_#$") != std::string::npos) {
             printf("Sending '$group_42$', to port %d\n",port);
             int status = send_to_server(buffer, sizeof(buffer), "$group_42$", udp_sock, destaddr, port);
             printf(">%s\n", buffer);
@@ -172,5 +171,125 @@ int main(int argc, char* argv[]) {
 
     }
 
-    messages.close();
+    messages_file.close();
 }
+
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
+
+#include <stdio.h>
+#include <iostream>
+#include <fstream>
+
+int main(int argc, char *argv []) {
+
+    if(argc != 4) {
+        printf("Usage: ./scanner <IP address>" 
+               " <low port> <high port>\n");
+        exit(0);
+    }
+
+    /* Define variables */
+    char* address = argv[1];                             
+    int low       = atoi(argv[2]);
+    int high      = atoi(argv[3]);  
+
+    int     udp_sock;
+    char    buffer[1024];
+    int     known_ports = 4;
+    int     open_ports[high - low + 1];
+    int     ports_found = 0;
+    int     length = 0;
+
+
+    struct sockaddr_in  destaddr;
+    struct timeval      timeout;
+
+
+    /* Create socket */
+    if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        perror("Unable to open socket");
+        return(-1);
+    }
+    /* Timeout on socket */
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10;
+    setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
+
+    /* Server Address */
+    destaddr.sin_family = AF_INET;
+    inet_aton(address, &destaddr.sin_addr);
+    // inet_aton("130.208.243.61", &destaddr.sin_addr);
+    
+    // while (ports_found < known_ports) {
+    for (int port = low; port <= high; port++) {
+        /* Server port */
+        destaddr.sin_port = htons(port);
+
+        /* Message */
+        strcpy(buffer, "knock");
+        length = strlen(buffer) + 1;
+
+        /* Send to server */
+        if (sendto(udp_sock, buffer, length, 0x0, (const struct sockaddr *) &destaddr, sizeof(destaddr)) < 0) {
+            printf("Failed to send to port %d", port);
+            perror("");
+        }
+
+        bzero(buffer, length); // Clear buffer
+        
+        /* Recive from server */
+        length = recvfrom(udp_sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
+        if (length > 0) {
+            // printf("Port %d: OPEN\n", port);
+            bool new_port = true;
+            for (int i = 0; i < ports_found; i++) {
+                if (port == open_ports[i]) {
+                    new_port = false;
+                    break;
+                }
+            }
+            if (new_port) {
+                open_ports[ports_found] = port;
+                ports_found++;
+                // printf(".");
+            }
+            bzero(buffer, sizeof(buffer)); //
+        }
+    }
+    // printf("\n");
+    // if (ports_found != known_ports) {
+    //     for (int i = 0; i < known_ports; i++) {
+    //         open_ports[i] = 0;
+    //     }
+    //     ports_found = 0;
+    // }
+    // }
+
+    // /* Save to file */
+    // std::ofstream openports;
+    // openports.open("open_ports.txt");
+
+    printf("Found %d open ports in range %d-%d: \n", ports_found, low, high);
+    for (int port = 0; port < ports_found; port++) {
+    //     openports << open_ports[port] << std::endl;
+        printf("%d ", open_ports[port]);
+        if ((port + 1) == ports_found) {
+            printf("\n");
+        }
+    }
+    // openports.close();
+
+    // /* Save to known ports */
+    // std::ofstream list_of_ports_write;
+    // list_of_ports_write.open("known_ports.txt", std::ios_base::app);
+
+    // for (int port = 0; port < ports_found; port++) {
+    //     list_of_ports_write << open_ports[port] << std::endl;
+    // }
+    
+    // list_of_ports_write.close();
+    return 1;

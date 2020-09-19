@@ -17,7 +17,10 @@
 #include <string.h>
 
 #include <stdio.h>
+#include <iostream>
 #include <fstream>
+
+#include "scanner_utils.h"
 
 int main(int argc, char *argv []) {
 
@@ -46,77 +49,26 @@ int main(int argc, char *argv []) {
     /* Create socket */
     if ((udp_sock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         perror("Unable to open socket");
-        return(-1);
+        return -1;
     }
     /* Timeout on socket */
     timeout.tv_sec = 0;
-    timeout.tv_usec = 10;
+    timeout.tv_usec = 100;
     setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
 
     /* Server Address */
     destaddr.sin_family = AF_INET;
     inet_aton(address, &destaddr.sin_addr);
-    // inet_aton("130.208.243.61", &destaddr.sin_addr);
-    
-    while (ports_found < known_ports) {
-        for (int port = low; port <= high; port++) {
-            /* Server port */
-            destaddr.sin_port = htons(port);
 
-            /* Message */
-            strcpy(buffer, "knock");
-            length = strlen(buffer) + 1;
-
-            /* Send to server */
-            if (sendto(udp_sock, buffer, length, 0x0, (const struct sockaddr *) &destaddr, sizeof(destaddr)) < 0) {
-                printf("Failed to send to port %d", port);
-                perror("");
-            }
-
-            bzero(buffer, length); // Clear buffer
-            
-            /* Recive from server */
-            length = recvfrom(udp_sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
-            if (length > 0) {
-                // printf("Port %d: OPEN\n", port);
-                bool new_port = true;
-                for (int i = 0; i < ports_found; i++) {
-                    if (port == open_ports[i]) {
-                        new_port = false;
-                        break;
-                    }
-                }
-                if (new_port) {
-                    open_ports[ports_found] = port;
-                    ports_found++;
-                    printf(".");
-                }
-                bzero(buffer, sizeof(buffer)); //
-            }
-        }
-        printf("\n");
-        if (ports_found != known_ports) {
-            for (int i = 0; i < known_ports; i++) {
-                open_ports[i] = 0;
-            }
-            ports_found = 0;
-        }
-    }
-
-    /* Save to file */
-    std::ofstream openports;
-    openports.open("open_ports.txt");
+    /* Scans range of ports */
+    ports_found = scan_range(udp_sock, low, high, destaddr, buffer, open_ports); // in headerfile
 
     printf("Found %d open ports in range %d-%d: \n", ports_found, low, high);
     for (int port = 0; port < ports_found; port++) {
-        openports << open_ports[port] << std::endl;
         printf("%d ", open_ports[port]);
         if ((port + 1) == ports_found) {
             printf("\n");
         }
     }
-    
-    // close(udp_sock);
-    openports.close();
-    return(1);
+    return 1;
 }
