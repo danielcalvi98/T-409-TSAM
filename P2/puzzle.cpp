@@ -49,52 +49,58 @@ int main(int argc, char* argv[]) {
         exit(0);
     }
 
-    int sock;
-    struct timeval tv;
-    
-    char buffer[1024];                                 
-    char msg[16];
-    strcpy(msg, "knock");
+    printf("Scanning ports...\n");
+    system("./scanner 130.208.243.61 4000 4100");
 
-    std::ifstream openports("open_ports.txt");
-    
+    int     udp_sock;   
+    char    buffer[1024];
+    int     length;                       
+
+    struct sockaddr_in  destaddr;
+    struct timeval      timeout;
+
+    if ((udp_sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+        perror("Failed to make socket");
+        close(udp_sock);
+        return -1;
+    }
+
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 10;
+    setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
+
+
+    destaddr.sin_family = AF_INET;
+    inet_aton("130.208.243.61", &destaddr.sin_addr);
+
     int port;
+    std::ifstream openports("open_ports.txt");
 
     while (openports >> port) {
 
-        if ((sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-            perror("Failed to make socket");
-            close(sock);
-            exit(-1);
-        }
+        destaddr.sin_port = htons(port);
 
-        struct sockaddr_in server_address;
-        server_address.sin_family       = AF_INET;
-        server_address.sin_port         = htons(port);
-        server_address.sin_addr.s_addr  = inet_addr("130.208.243.61"); //skel.ru.is
+        strcpy(buffer, "knock");
+        length = strlen(buffer) + 1;
 
-        if (sendto(sock, msg, sizeof(msg), 0x0, (struct sockaddr *)&server_address, sizeof(server_address)) < 0) {
+
+        if (sendto(udp_sock, buffer, length, 0x0, (struct sockaddr *)&destaddr, sizeof(destaddr)) < 0) {
             perror("failed to send");
-            exit(-1);
         }
-
         
-        tv.tv_sec = 1;
-        setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+        bzero(buffer, length);
 
-        int msg_len = recvfrom(sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
+        int msg_len = recvfrom(udp_sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
 
         if (msg_len < 0) {
-            printf("Nothing\n");
-            close(sock);
-            continue;
-        } 
+            printf("No message\n");
+        } else {
+        printf("Port %d: %s\n", port, buffer);
 
-        printf("Port %d: %s", port, buffer);
-        for (int i = 0; i < (int) sizeof(buffer); i++) {
-            buffer[i] = '\0';
+        bzero(buffer, sizeof(buffer));
+
         }
-        close(sock);
-        }
-    printf("\n");
+    }
+    close(udp_sock);
+    return 1;
 }

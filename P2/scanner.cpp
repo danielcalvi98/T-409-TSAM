@@ -28,20 +28,19 @@ int main(int argc, char *argv []) {
     }
 
     char* address = argv[1];                             
-    int low  = atoi(argv[2]);
-    int high = atoi(argv[3]);  
-    // int low  = 4000;
-    // int high = 4100;
+    int low       = atoi(argv[2]);
+    int high      = atoi(argv[3]);  
 
-    int udp_sock;
-    char buffer[1024];
-    int open_ports[high - low + 1];
-    int ports_found = 0;
-    int length = 0;
-    int checks = 3;
-    int check_nr = 0;
-    struct sockaddr_in destaddr;
-    struct timeval timeout;
+    int     udp_sock;
+    char    buffer[1024];
+    int     known_ports = 4;
+    int     open_ports[high - low + 1];
+    int     ports_found = 0;
+    int     length = 0;
+
+
+    struct sockaddr_in  destaddr;
+    struct timeval      timeout;
 
 
     /*  */
@@ -51,16 +50,15 @@ int main(int argc, char *argv []) {
     }
     /*  */
     timeout.tv_sec = 0;
-    timeout.tv_usec = 1;
+    timeout.tv_usec = 10;
     setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
 
     /*  */
     destaddr.sin_family = AF_INET;
     inet_aton(address, &destaddr.sin_addr);
     // inet_aton("130.208.243.61", &destaddr.sin_addr);
-
-    while (check_nr < checks) {
-        check_nr++;
+    
+    while (ports_found < known_ports) {
         for (int port = low; port <= high; port++) {
             /*  */
             destaddr.sin_port = htons(port);
@@ -78,7 +76,8 @@ int main(int argc, char *argv []) {
             bzero(buffer, length); //
             
             /*  */
-            if (length = recvfrom(udp_sock, buffer, sizeof(buffer), 0x0, NULL, NULL) > 0) {
+            length = recvfrom(udp_sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
+            if (length > 0) {
                 // printf("Port %d: OPEN\n", port);
                 bool new_port = true;
                 for (int i = 0; i < ports_found; i++) {
@@ -90,10 +89,17 @@ int main(int argc, char *argv []) {
                 if (new_port) {
                     open_ports[ports_found] = port;
                     ports_found++;
-                    check_nr = 0;
+                    printf(".");
                 }
                 bzero(buffer, sizeof(buffer)); //
             }
+        }
+        printf("\n");
+        if (ports_found != known_ports) {
+            for (int i = 0; i < known_ports; i++) {
+                open_ports[i] = 0;
+            }
+            ports_found = 0;
         }
     }
 
