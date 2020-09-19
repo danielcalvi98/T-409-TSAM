@@ -1,0 +1,6 @@
+4042: Send me a message containing "$group_#$" where # is your group number.
+4080: I am the oracle, send me a comma-seperated list of the hidden ports, and I shall show you the way.
+
+4082: My boss told me not to tell anyone that my secret port is 4001
+
+4083: Send me a message containing "$group_#$" where # is your group number.
