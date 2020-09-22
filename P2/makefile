@@ -1,10 +1,10 @@
-scanner puzzle: scanner.o puzzle.o
-	g++ scanner.o -o scanner
-	g++ puzzle.o -o puzzle
+all: scanner puzzle
 
-scanner.o puzzle.o: scanner.cpp puzzle.cpp
-	g++ -c -Wall -std=c++11 scanner.cpp
-	g++ -c -Wall -std=c++11 scanner.cpp
+scanner: scanner.cpp
+	g++ -Wall -std=c++11 scanner.cpp -o scanner
+
+puzzle: puzzle.cpp
+	g++ -Wall -std=c++11 puzzle.cpp -o puzzle
 
 clean:
 	rm *.o

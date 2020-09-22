@@ -8,7 +8,6 @@
 =====================================
   - 60% of the time it works
     every time 
-
 */
 
 #include <sys/socket.h>
@@ -61,7 +60,7 @@ int main(int argc, char *argv []) {
     inet_aton(address, &destaddr.sin_addr);
 
     /* Scans range of ports */
-    ports_found = scan_range(udp_sock, low, high, destaddr, buffer, open_ports); // in headerfile
+    ports_found = scan_range(udp_sock, low, high, "knock", destaddr, buffer, open_ports); // in headerfile
 
     printf("Found %d open ports in range %d-%d: \n", ports_found, low, high);
     for (int port = 0; port < ports_found; port++) {
