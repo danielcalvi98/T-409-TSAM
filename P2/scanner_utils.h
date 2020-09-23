@@ -42,22 +42,22 @@ int scan_range(int socket, int low, int high, char* message, sockaddr_in destadd
     return ports_found;
 }
 
-u_short csum(u_short* buffer, int size) {
-    register long   checksum = 0;
+// u_short csum(u_short* buffer, int size) {
+//     register long   checksum = 0;
 
-    while (size > 1) {
-        checksum += *buffer++;
-        size -= sizeof(u_short);
-    }
-    if (size) {
-        checksum =* (u_char*) buffer;
-    }
-    checksum = (checksum >> 16) + (checksum & 0xFFFF);
+//     while (size > 1) {
+//         checksum += *buffer++;
+//         size -= sizeof(u_short);
+//     }
+//     if (size) {
+//         checksum =* (u_char*) buffer;
+//     }
+//     checksum = (checksum >> 16) + (checksum & 0xFFFF);
     
-    checksum = checksum + (checksum >> 16);
+//     checksum = checksum + (checksum >> 16);
 
-    return (u_short) (~checksum);
-}
+//     return (u_short) (~checksum);
+// }
 
 struct pseudo_header {
     u_int32_t source;
@@ -66,3 +66,27 @@ struct pseudo_header {
     u_int8_t  protocol;
     u_int16_t udp_length;
 };
+
+u_short csum(u_short *ptr,int nbytes) 
+{
+	register long sum;
+	u_short oddbyte;
+	register short answer;
+
+	sum = 0;
+	while(nbytes>1) {
+		sum += *ptr++;
+		nbytes -= 2;
+	}
+	if(nbytes == 1) {
+		oddbyte = 0;
+		*((u_char*) &oddbyte) =* (u_char*) ptr;
+		sum += oddbyte;
+	}
+
+	sum = (sum >> 16) + (sum & 0xffff);
+	sum = sum + (sum >> 16);
+	answer = (short) ~sum;
+	
+	return answer;
+}

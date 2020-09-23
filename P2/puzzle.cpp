@@ -24,6 +24,9 @@ PORT 4099:
 
 My boss told me not to tell anyone that my secret port is 4002
 
+
+Secret message? St5ctypeIcE
+
 */
 
 
@@ -42,18 +45,24 @@ My boss told me not to tell anyone that my secret port is 4002
 #include "scanner_utils.h"  //our utilty module
 
 void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port) {
-    int raw_sock;
+    int raw_sock, listen;
     timeval timeout;
 
+    struct sockaddr_in me;
+    me.sin_addr.s_addr = htons(INADDR_ANY);
+    me.sin_family      = AF_INET;
+    me.sin_port        = htons(5000);
 
     /* Create raw socket */
-    if ((raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_UDP)) < 0) {
+    if ((raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0) {
         perror("Unable to open raw socket, did you forget to run with sudo?");
         return;
     }
+    // listen = socket(AF_INET, SOCK_DGRAM, 0);
+    // bind(listen, (sockaddr *) me, sizeof(me));
 
     /* Set timeout */
-    timeout.tv_sec = 0;
+    timeout.tv_sec = 1;
     timeout.tv_usec = 100;
 
     /* Set options RAW */
@@ -68,7 +77,7 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     std::string message = std::string(buffer);
     size_t pos = message.find("0x");
     
-    char checksum[6 + 1]; // Guessing it needs +1 for '\0' 
+    char checksum[6 + 1]; // Guessing it needs +1 for '\0'
 
     if (pos == std::string::npos) {
         return;
@@ -92,33 +101,34 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     
     /* Data */
     char *data = sizeof(iphdr) + sizeof(udphdr) + buffer;
-    strcpy(data, "test");
+    strcpy(data, "$group_42$");
 
     /* Source IP */
-    char sourceip[32] = "192.168.1.17";
+    in_addr_t sourceip = inet_addr("192.168.1.17");
 
     ipheader -> ihl     = 5;
     ipheader -> version = 4;
 
     ipheader -> tos     = 0;
     ipheader -> tot_len = sizeof(iphdr) + sizeof(udphdr) + strlen(data);
-    ipheader -> id      = htonl(69696);
+    ipheader -> id      = htonl(500);
+    ipheader -> frag_off= htons(0xC000);
     ipheader -> ttl     = 255;
     ipheader -> protocol= IPPROTO_UDP;
-    ipheader -> check   = 0;
-    ipheader -> saddr   = inet_addr(sourceip);
+    ipheader -> check   = 0; 
+    ipheader -> saddr   = sourceip;
     ipheader -> daddr   = destaddr.sin_addr.s_addr;
 
-    ipheader -> check   = csum((u_short *) buffer, ipheader->tot_len);
+    ipheader -> check   = csum((u_short *) buffer, ipheader->tot_len); // doesnt make a diffrence
 
-    udpheader-> source  = htons(ipheader -> saddr);
+    udpheader-> source  = htons(38509);
     udpheader-> dest    = htons(port);
-    udpheader-> len     = htons(8 + strlen(data));
+    udpheader-> len     = htons(sizeof(udphdr) + strlen(data));
     udpheader-> check   = 0;
 
-    pheader.source      = inet_addr(sourceip);
+    pheader.source      = sourceip;
     pheader.dest        = destaddr.sin_addr.s_addr;
-    pheader.zeros       = 0;
+    pheader.zeros       = 0; 
     pheader.udp_length  = htons(sizeof(udphdr) + strlen(data));
 
     int psize = sizeof(pseudo_header) + sizeof(udphdr) + strlen(data);
@@ -127,13 +137,13 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     memcpy(pseudogram, (char *) &pheader, sizeof(pseudo_header));
     memcpy(pseudogram + sizeof(pseudo_header), udpheader, sizeof(udphdr) + strlen(data));
 
-    //udpheader-> check   = csum((u_short *) pseudogram, psize);
+    udpheader-> check   = csum((u_short *) pseudogram, psize);
 
-    u_int16_t old_check = std::stoi(checksum, 0, 16);
+    // u_int16_t old_check = std::stoi(checksum, 0, 16);
 
-    u_int16_t new_check = (old_check>>8) + (old_check<<8);
+    //u_int16_t new_check = (old_check>>8) + (old_check<<8);
 
-    udpheader-> check   = new_check; // What we got from the message
+    // udpheader-> check   = old_check; // What we got from the message
 
     printf("Sending with checksum: %x\n", udpheader -> check);
     /* Send message to buffer */
@@ -175,14 +185,18 @@ int main(int argc, char* argv[]) {
         return -1;
     }
 
-    /* Set timeout */
+    /* Timeout */
     timeout.tv_sec = 0;
     timeout.tv_usec = 100;
 
     /* Set options UDP */
+    /* Set timeout */
     setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
 
-   
+    // /* Dont fragment */
+    // int val = IP_PMTUDISC_DO;
+    // printf("%x", val);
+    // setsockopt(udp_sock, IPPROTO_IP, IP_MTU_DISCOVER, &val, sizeof(val));
 
     /* Set destination address */
     destaddr.sin_family = AF_INET;
@@ -193,7 +207,7 @@ int main(int argc, char* argv[]) {
         int length = send_to_server(buffer, sizeof(buffer), (char*) "$group_42$", udp_sock, destaddr, port);
         if (length) {
             printf("%d: Message : %s\n", port, buffer);
-            checksum_part(buffer, sizeof(buffer), destaddr, port);
+            // checksum_part(buffer, sizeof(buffer), destaddr, port);
         }
     }
 }
