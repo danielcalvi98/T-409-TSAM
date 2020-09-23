@@ -33,6 +33,9 @@ Secret message? St5ctypeIcE
 #include <netinet/udp.h>	//Provides declarations for udp header
 #include <netinet/ip.h> 	//Provides declarations for ip header
 #include <sys/socket.h>     //for socket
+#include <sys/ioctl.h>      // VPN
+#include <net/if.h>         // VPN
+
 #include <netinet/in.h>
 #include <arpa/inet.h>      // inet_addr
 
@@ -61,29 +64,38 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
         checksum[i] = buffer[i + (int) pos];
     }
 
-    int raw_sock;
+    int raw_sock, listen;
     timeval timeout;
 
-    // struct sockaddr_in me;
-    // me.sin_addr.s_addr = htons(INADDR_ANY);
-    // me.sin_family      = AF_INET;
-    // me.sin_port        = htons(5000);
+    struct sockaddr_in me;
+    me.sin_addr.s_addr = htons(INADDR_ANY);
+    me.sin_family      = AF_INET;
+    me.sin_port        = htons(6969);
 
     /* Create raw socket */
     if ((raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0) {
         perror("Unable to open raw socket, did you forget to run with sudo?");
         return;
     }
+    bzero(buffer, buffersize);
     strcpy(buffer, "test");
-    // listen = socket(AF_INET, SOCK_DGRAM, 0);
-    // bind(listen, (sockaddr *) me, sizeof(me));
+    listen = socket(AF_INET, SOCK_DGRAM, 0);
+    bind(listen, (sockaddr *) &me, sizeof(me));
 
     /* Set timeout */
-    timeout.tv_sec = 0;
+    timeout.tv_sec = 1;
     timeout.tv_usec = 100;
 
-    /* Set options RAW */
+    /* Set options */
     setsockopt(raw_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
+    setsockopt(listen, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
+    struct ifreq ifr;
+
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "tun0");
+
+    /* Connect to VPN */
+    setsockopt(raw_sock, SOL_SOCKET, SO_BINDTODEVICE, (void *) &ifr, sizeof(ifr));
+    setsockopt(listen, SOL_SOCKET, SO_BINDTODEVICE, (void *) &ifr, sizeof(ifr));
 
      int opt = 1;
     if (setsockopt(raw_sock, IPPROTO_IP, IP_HDRINCL, &opt, sizeof(opt)) < 0) {
@@ -104,11 +116,12 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     pseudo_header pheader;
     
     /* Data */
-    char *data = sizeof(iphdr) + sizeof(udphdr) + buffer;
-    strcpy(data, buffer);
+    //char *data = sizeof(iphdr) + sizeof(udphdr) + buffer;
+    char data[255];
+    strcpy(data, "test");
 
-    /* Source IP */
-    in_addr_t sourceip = inet_addr("192.168.1.17");
+    // /* Source IP */
+    // in_addr_t sourceip = inet_addr("192.168.1.17");
 
     ipheader -> ihl     = 5;
     ipheader -> version = 4;
@@ -120,19 +133,20 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     ipheader -> ttl     = 255;
     ipheader -> protocol= IPPROTO_UDP;
     ipheader -> check   = 0; 
-    ipheader -> saddr   = sourceip;
+    ipheader -> saddr   = me.sin_addr.s_addr;
     ipheader -> daddr   = destaddr.sin_addr.s_addr;
 
     ipheader -> check   = csum((u_short *) buffer, ipheader->tot_len); // doesnt make a diffrence
 
-    udpheader-> source  = htons(38509);
+    udpheader-> source  = me.sin_port;
     udpheader-> dest    = htons(port);
     udpheader-> len     = htons(sizeof(udphdr) + strlen(data));
     udpheader-> check   = 0;
 
-    pheader.source      = sourceip;
+    pheader.source      = me.sin_addr.s_addr;
     pheader.dest        = destaddr.sin_addr.s_addr;
     pheader.zeros       = 0; 
+    pheader.protocol    = IPPROTO_UDP;
     pheader.udp_length  = htons(sizeof(udphdr) + strlen(data));
 
     int psize = sizeof(pseudo_header) + sizeof(udphdr) + strlen(data);
@@ -174,7 +188,9 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
 
     /* Get response from server */
     bzero(buffer, sizeof(buffer)); // Clear buffer
-    int length = recvfrom(raw_sock, buffer, sizeof(buffer), 0x0, NULL, NULL);
+
+    socklen_t size = sizeof(destaddr);
+    int length = recvfrom(listen, buffer, sizeof(buffer), 0x0, (struct sockaddr *) &destaddr, &size);
     if (length > 0) {
         printf("Got: %s \n", buffer);
     } else {
@@ -213,6 +229,13 @@ int main(int argc, char* argv[]) {
     /* Set options UDP */
     /* Set timeout */
     setsockopt(udp_sock, SOL_SOCKET, SO_RCVTIMEO, (const char*) &timeout, sizeof(timeout));
+
+    struct ifreq ifr;
+
+    snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "tun0");
+
+    /* Connect to VPN */
+    setsockopt(udp_sock, SOL_SOCKET, SO_BINDTODEVICE, (void *) &ifr, sizeof(ifr));
 
     // /* Dont fragment */
     // int val = IP_PMTUDISC_DO;
