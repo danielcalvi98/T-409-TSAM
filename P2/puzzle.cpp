@@ -45,24 +45,41 @@ Secret message? St5ctypeIcE
 #include "scanner_utils.h"  //our utilty module
 
 void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port) {
-    int raw_sock, listen;
+
+    /* Check if message contains 0x AKA the checksum */
+    std::string message = std::string(buffer);
+    size_t pos = message.find("0x");
+    
+    char checksum[6 + 1]; // Guessing it needs +1 for '\0'
+
+    if (pos == std::string::npos) {
+        return;
+    }
+    
+    strcpy(buffer, "test");
+    for (int i = 0; i < 6; i++) {
+        checksum[i] = buffer[i + (int) pos];
+    }
+
+    int raw_sock;
     timeval timeout;
 
-    struct sockaddr_in me;
-    me.sin_addr.s_addr = htons(INADDR_ANY);
-    me.sin_family      = AF_INET;
-    me.sin_port        = htons(5000);
+    // struct sockaddr_in me;
+    // me.sin_addr.s_addr = htons(INADDR_ANY);
+    // me.sin_family      = AF_INET;
+    // me.sin_port        = htons(5000);
 
     /* Create raw socket */
     if ((raw_sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0) {
         perror("Unable to open raw socket, did you forget to run with sudo?");
         return;
     }
+    strcpy(buffer, "test");
     // listen = socket(AF_INET, SOCK_DGRAM, 0);
     // bind(listen, (sockaddr *) me, sizeof(me));
 
     /* Set timeout */
-    timeout.tv_sec = 1;
+    timeout.tv_sec = 0;
     timeout.tv_usec = 100;
 
     /* Set options RAW */
@@ -74,21 +91,8 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
         return;
     }
 
-    std::string message = std::string(buffer);
-    size_t pos = message.find("0x");
-    
-    char checksum[6 + 1]; // Guessing it needs +1 for '\0'
-
-    if (pos == std::string::npos) {
-        return;
-    }
-    for (int i = 0; i < 6; i++) {
-        checksum[i] = buffer[i + (int) pos];
-    }
-
     printf("Sending message with checksum...\n");
 
-    bzero(buffer, sizeof(buffer)); // Clear buffer
 
     /* IP header */
     iphdr *ipheader = (iphdr *) buffer;
@@ -101,7 +105,7 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
     
     /* Data */
     char *data = sizeof(iphdr) + sizeof(udphdr) + buffer;
-    strcpy(data, "$group_42$");
+    strcpy(data, buffer);
 
     /* Source IP */
     in_addr_t sourceip = inet_addr("192.168.1.17");
@@ -133,21 +137,38 @@ void checksum_part(char* buffer, int buffersize, sockaddr_in destaddr, int port)
 
     int psize = sizeof(pseudo_header) + sizeof(udphdr) + strlen(data);
     char *pseudogram[psize];
-
     memcpy(pseudogram, (char *) &pheader, sizeof(pseudo_header));
     memcpy(pseudogram + sizeof(pseudo_header), udpheader, sizeof(udphdr) + strlen(data));
 
     udpheader-> check   = csum((u_short *) pseudogram, psize);
+    printf("Calculated checksum: %x\n", udpheader -> check);
 
-    // u_int16_t old_check = std::stoi(checksum, 0, 16);
+    u_int16_t desired_checksum = std::stoi(checksum, 0, 16);
+    printf("Required checksum  : %x\n", desired_checksum);
+    
+    // u_int16_t add = ((desired_checksum - udpheader -> check) + 0xFFFF) % 0xFFFF;
+    // char add2 = add &  0x00FF;
+    // char add1 = add >> 8;
+    // printf("What we need add   : %x\n", add);
+    // printf("What we need add   : %c %c\n", add1, add2);
 
-    //u_int16_t new_check = (old_check>>8) + (old_check<<8);
+    // strcpy(buffer, "test" + add1 + add2);
 
-    // udpheader-> check   = old_check; // What we got from the message
 
-    printf("Sending with checksum: %x\n", udpheader -> check);
+    // data = sizeof(iphdr) + sizeof(udphdr) + buffer;
+    // strcpy(data, buffer);
+
+    // psize = sizeof(pseudo_header) + sizeof(udphdr) + strlen(data);
+    // pseudogram[psize];
+    // memcpy(pseudogram, (char *) &pheader, sizeof(pseudo_header));
+    // memcpy(pseudogram + sizeof(pseudo_header), udpheader, sizeof(udphdr) + strlen(data));
+ 
+    // udpheader-> check = csum((u_short *) pseudogram, psize);
+    // printf("New calculated checksum: %x\n", udpheader -> check);
+
+    //printf("Sending with checksum: %x\n", udpheader -> check);
     /* Send message to buffer */
-    if (sendto(raw_sock, buffer, ipheader->tot_len, 0x0, (struct sockaddr *) &destaddr, sizeof(destaddr)) < 0) {
+    if (sendto(raw_sock, buffer, buffersize, 0x0, (struct sockaddr *) &destaddr, sizeof(destaddr)) < 0) {
         perror("Failed to send package");
     }
 
@@ -207,7 +228,7 @@ int main(int argc, char* argv[]) {
         int length = send_to_server(buffer, sizeof(buffer), (char*) "$group_42$", udp_sock, destaddr, port);
         if (length) {
             printf("%d: Message : %s\n", port, buffer);
-            // checksum_part(buffer, sizeof(buffer), destaddr, port);
+            checksum_part(buffer, sizeof(buffer), destaddr, port);
         }
     }
 }

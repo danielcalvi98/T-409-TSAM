@@ -26,21 +26,21 @@ int send_to_server(char* buffer, int bufferlen, char* message, int socket, socka
     }
 }
 
-int scan_range(int socket, int low, int high, char* message, sockaddr_in destaddr, char* buffer, int* ports_found_list) {
-    /* Keeps track of ports found */
-    int ports_found = 0;
+// int scan_range(int socket, int low, int high, char* message, sockaddr_in destaddr, char* buffer, int* ports_found_list) {
+//     /* Keeps track of ports found */
+//     int ports_found = 0;
     
-    /* Loops through ports */
-    for (int port = low; port <= high; port++) {
+//     /* Loops through ports */
+//     for (int port = low; port <= high; port++) {
 
-        int length = send_to_server(buffer, sizeof(buffer), message, socket, destaddr, port);
-        if (length > 0) {
-            ports_found_list[ports_found] = port;
-            ports_found++;
-        } 
-    }
-    return ports_found;
-}
+//         int length = send_to_server(buffer, sizeof(buffer), message, socket, destaddr, port);
+//         if (length > 0) {
+//             ports_found_list[ports_found] = port;
+//             ports_found++;
+//         } 
+//     }
+//     return ports_found;
+// }
 
 // u_short csum(u_short* buffer, int size) {
 //     register long   checksum = 0;
