@@ -21,21 +21,6 @@
 
 #include "scanner_utils.h"
 
-int scan_range(int socket, int low, int high, char* message, sockaddr_in destaddr, char* buffer, int* ports_found_list) {
-    /* Keeps track of ports found */
-    int ports_found = 0;
-    
-    /* Loops through ports */
-    for (int port = low; port <= high; port++) {
-
-        int length = send_to_server(buffer, sizeof(buffer), message, socket, destaddr, port);
-        if (length > 0) {
-            ports_found_list[ports_found] = port;
-            ports_found++;
-        } 
-    }
-    return ports_found;
-}
 
 int main(int argc, char *argv []) {
 
@@ -55,7 +40,6 @@ int main(int argc, char *argv []) {
     int     open_ports[high - low + 1];
     int     ports_found = 0;
     int     length = 0;
-
 
     struct sockaddr_in  destaddr;
     struct timeval      timeout;

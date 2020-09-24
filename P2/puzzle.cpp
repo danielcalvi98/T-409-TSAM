@@ -71,140 +71,95 @@ int udp_socket(int timeout_ms = 100) {
     return udp_sock;
 }
 
+char *create_sudo_header(char *data, udphdr *udph, iphdr *iph) {
+    struct pseudo_header psh;
+    psh.source = iph->saddr;
+	psh.dest = iph->daddr;
+	psh.zeros = 0;
+	psh.protocol = IPPROTO_UDP;
+	psh.udp_length = udph->uh_ulen;
+
+    int psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + strlen(data);
+	char *pseudogram = (char *) malloc(psize);
+	
+    memcpy(pseudogram, (char*) &psh , sizeof (struct pseudo_header));
+    memcpy(pseudogram + sizeof(struct pseudo_header) , udph , sizeof(struct udphdr) + strlen(data));
+    return pseudogram;
+}
+
 void checksum_part(sockaddr_in destaddr, int port, int checksum) {
 	int one = 1;
 	const int *val = &one;
-
+    
     int listen = udp_socket();
+
+    bind(listen, (sockaddr *) &destaddr, sizeof(destaddr));
 
     int s;
     if ((s = socket(AF_INET, SOCK_RAW, IPPROTO_RAW)) < 0) {
         perror("Error creating socket");
-        exit(-1);
+        return;
     }
 
 	if (setsockopt (s, IPPROTO_IP, IP_HDRINCL, val, sizeof (one)) < 0) {
 		perror("Error setting IP_HDRINCL");
-		exit(0);
+		return;
 	}
 
     struct ifreq ifr;
     snprintf(ifr.ifr_name, sizeof(ifr.ifr_name), "tun0");
 
     setsockopt(s, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr));
+    setsockopt(listen, SOL_SOCKET, SO_BINDTODEVICE, (void *)&ifr, sizeof(ifr));
 
-	//Datagram to represent the packet
-	char datagram[4096] , source_ip[32] , *data , *pseudogram;
-	
-	//zero out the packet buffer
-	memset (datagram, 0, 4096);
-	
-	//IP header
-	struct iphdr *iph = (struct iphdr *) datagram;
-
-	//UDP header
-	struct udphdr *udph = (struct udphdr *) (datagram + sizeof (struct ip));
-	struct sockaddr_in sin;
-	struct pseudo_header psh;
-
-    //Data part
-	data = datagram + sizeof(struct iphdr) + sizeof(struct udphdr);
-	strcpy(data , "TESTER1234");
-
-    //srcaddr.sin_addr = inet_addr("192.168.208.8");
-
-	iph->ihl = 5;
-	iph->version = 4;
-	iph->tos = 0;
-	iph->tot_len = sizeof (struct iphdr) + sizeof (struct udphdr) + strlen(data);
-	iph->id = htonl (123);	//Id of this packet
-	iph->frag_off = htons(0xC000);
-	iph->ttl = 255;
-	iph->protocol = IPPROTO_UDP;
-	iph->check = 0;		//Set to 0 before calculating checksum
-	iph->saddr = inet_addr("192.168.206.8");	//Spoof the source ip address
-	iph->daddr = destaddr.sin_addr.s_addr;
-
-	iph->check = csum ((unsigned short *) datagram, iph->tot_len);
-
-    udph->uh_dport = htons(port);
-    udph->uh_sport = htons(6969); // nice
-    udph->uh_sum = 0;
+    //Datagram to represent the packet
+    char datagram[4096], *data;
     
-    udph->uh_ulen = htons(sizeof(struct udphdr) + strlen(data));
+    struct iphdr *iph = (struct iphdr *) datagram;
 
-	//Now the UDP checksum
-	psh.source = inet_addr("192.168.206.8");
-	psh.dest = destaddr.sin_addr.s_addr;
-	psh.zeros = 0;
-	psh.protocol = IPPROTO_UDP;
-	psh.udp_length = htons(sizeof(struct udphdr) + strlen(data) );
+    //UDP header
+    struct udphdr *udph = (struct udphdr *) (datagram + sizeof (struct ip));
 
-	int psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + strlen(data);
-	pseudogram = (char *) malloc(psize);
-	
-	memcpy(pseudogram , (char*) &psh , sizeof (struct pseudo_header));
-	memcpy(pseudogram + sizeof(struct pseudo_header) , udph , sizeof(struct udphdr) + strlen(data));
-
-    udph->check = csum( (unsigned short*) pseudogram , psize); // correct checksum
-
-    printf("%x\n", udph->check);
-
-    int add = checksum - udph->check;
-    printf("%x\n", add);
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    //Data part
-	data = datagram + sizeof(struct iphdr) + sizeof(struct udphdr);
-    std::string adder("TESTER1234");
-    char x = ((char) (add) & 0xFF00) >> 8;
-    char y = ((char) (add) & 0x00FF) << 8;
-    // int z = x  y;
-    adder += z;
-	strcpy(data, adder.c_str());
-
-    //srcaddr.sin_addr = inet_addr("192.168.208.8");
-
-	iph->ihl = 5;
-	iph->version = 4;
-	iph->tos = 0;
-	iph->tot_len = sizeof (struct iphdr) + sizeof (struct udphdr) + strlen(data);
-	iph->id = htonl (123);	//Id of this packet
-	iph->frag_off = htons(0xC000);
-	iph->ttl = 255;
-	iph->protocol = IPPROTO_UDP;
-	iph->check = 0;		//Set to 0 before calculating checksum
-	iph->saddr = inet_addr("192.168.206.8");	//Spoof the source ip address
-	iph->daddr = destaddr.sin_addr.s_addr;
-
-	iph->check = csum ((unsigned short *) datagram, iph->tot_len);
-
-    udph->uh_dport = htons(port);
-    udph->uh_sport = htons(6969); // nice
-    udph->uh_sum = 0;
+    for (unsigned short int i = 0; i < 65536; i++) {
     
-    udph->uh_ulen = htons(sizeof(struct udphdr) + strlen(data));
+        //zero out the packet buffer
+        memset (datagram, 0, 4096);
+        char b = i & 0xff;
+        char a = i >> 8;
+        char ab[2] = {a,b};
+        data = datagram + sizeof(struct iphdr) + sizeof(struct udphdr);
+        strcpy(data , (char *) ab);
 
-	//Now the UDP checksum
-	psh.source = inet_addr("192.168.206.8");
-	psh.dest = destaddr.sin_addr.s_addr;
-	psh.zeros = 0;
-	psh.protocol = IPPROTO_UDP;
-	psh.udp_length = htons(sizeof(struct udphdr) + strlen(data) );
+        iph->ihl = 5;
+        iph->version = 4;
+        iph->tos = 0;
+        iph->tot_len = sizeof (struct iphdr) + sizeof (struct udphdr) + strlen(data);
+        iph->id = htonl (123);	//Id of this packet
+        iph->frag_off = htons(0xC000);
+        iph->ttl = 255;
+        iph->protocol = IPPROTO_UDP;
+        iph->check = 0;		//Set to 0 before calculating checksum
+        iph->saddr = inet_addr("192.168.206.30");	//Spoof the source ip address
+        iph->daddr = destaddr.sin_addr.s_addr;
 
-	psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + strlen(data);
-	pseudogram = (char *) malloc(psize);
-	
-	memcpy(pseudogram , (char*) &psh , sizeof (struct pseudo_header));
-	memcpy(pseudogram + sizeof(struct pseudo_header) , udph , sizeof(struct udphdr) + strlen(data));
+        iph->check = csum((u_short *) datagram, iph->tot_len);
 
-    udph->check = csum( (unsigned short*) pseudogram , psize); // correct checksum
+        udph->uh_dport = htons(port);
+        udph->uh_sport = htons(6969); // nice
+        udph->uh_sum = 0;
+        
+        udph->uh_ulen = htons(sizeof(struct udphdr) + strlen(data));
 
-    printf("%x\n", udph->check);
+        // //Now the UDP checksum
+        char *pseudogram = create_sudo_header(data, udph, iph);
+        int psize = sizeof(struct pseudo_header) + sizeof(struct udphdr) + strlen(data);
 
-    //////////////////////////////////////////////////////////////////////////////////////////////////////////
-    
+        udph->uh_sum = csum((u_short*) pseudogram , psize); // correct checksum
+
+        if (ntohs(checksum) == udph->uh_sum) {
+            break;
+        }
+    }    
 
     if (sendto (s, datagram, iph->tot_len ,	0, (struct sockaddr *) &destaddr, sizeof (destaddr)) < 0) {
         perror("sendto failed");
@@ -215,11 +170,14 @@ void checksum_part(sockaddr_in destaddr, int port, int checksum) {
 
     socklen_t size = sizeof(destaddr);
     char from[255];
+    memset(from, 0, sizeof(from));
 
     if (recvfrom(listen, from, sizeof(from), 0x0, (struct sockaddr *) &destaddr, &size) > 0) {
         printf("Message: %s\n", from);
+        return;
     } else {
         perror("No message T-T");
+        return;
     }
 }
 
@@ -239,10 +197,9 @@ int main(int argc, char* argv[]) {
     std::string message;
 
     struct sockaddr_in destaddr, srcaddr;
-    struct timeval timeout;
 
     /* Create upd socket */
-    udp_sock = udp_socket(10);
+    udp_sock = udp_socket(100);
     
     /* Set source address */
     srcaddr.sin_family = AF_INET;
@@ -257,11 +214,14 @@ int main(int argc, char* argv[]) {
     destaddr.sin_port = htons(4010);
 
 
+    int ports[high - low + 1];
 
-    int ports[4] = {4010, 4011, 4012, 4042};
-    for (int p : ports) {
+    int nr_of_ports = scan_range(udp_sock, low, high, (char *) "knock", destaddr, datagram, ports);
+
+    for (int p = 0; p <= nr_of_ports; p++) {
+        int port = ports[p];
         bzero(datagram, sizeof(datagram));
-        send_to_server(datagram, sizeof(datagram), "$group_42$", udp_sock, destaddr, p);
+        send_to_server(datagram, sizeof(datagram), (char *) "$group_42$", udp_sock, destaddr, port);
         printf("%s\n", datagram);
       
         /* Check if message contains 0x AKA the checksum */
@@ -269,16 +229,17 @@ int main(int argc, char* argv[]) {
         size_t pos = message.find("0x");
         if (pos == std::string::npos) {
             continue;
-        }        
+        }       
         char che[7];
         for (int i = 0; i < 6; i++) {
             che[i] = datagram[i + (int) pos];
         }
         int checksum;
         checksum = std::stoi(che, 0, 16);
-        printf("%x\n",checksum);
-        checksum_part(destaddr, p, checksum);
-       
-    }
 
+        checksum_part(destaddr, port, checksum);  
+        printf("%s\n", datagram);
+        checksum_part(destaddr, port, checksum);  
+        checksum_part(destaddr, port, checksum);  
+    }
 }
