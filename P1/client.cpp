@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
 
         send(sock, input, sizeof(input), 0);
         recv(sock, buffer, sizeof(buffer), 0);
-        std::cout << buffer << std::endl;  
+        std::cout << buffer << std::endl;
         
     }
 }
