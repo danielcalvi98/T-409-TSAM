@@ -77,6 +77,7 @@ std::map<int, Client*> clients; // Lookup table for per Client information
 std::stack<int> remove_clients;
 
 std::ofstream server_log;
+std::ofstream write_message;
 
 // Open socket for specified port.
 //
@@ -186,7 +187,6 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
     FD_CLR(clientSocket, openSockets);
 }
 
-// Process command from client on the server
 std::string serverName(int clientSocket) {
     if (!servers[clientSocket]->name.empty()) 
         return servers[clientSocket]->name;
@@ -194,11 +194,7 @@ std::string serverName(int clientSocket) {
 
 }
 
-std::string clientName(int clientSocket) {
-    if (!clients[clientSocket]->name.empty())
-        return clients[clientSocket]->name;
-    return "CLIENT:" + std::to_string(clientSocket);
-}
+// Process command from client on the server
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
 
@@ -252,7 +248,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         for(auto i = tokens.begin()+2;i != tokens.end();i++) {
             msg += *i + " ";
         }
-        msg = "MESSAGE FROM " + clientName(clientSocket) + ": " + msg;
+        msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
         for(auto const& pair : servers) {
             send(pair.second->sock, msg.c_str(), msg.length(),0);
         }
@@ -280,81 +276,62 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize, bool *finished) {
     std::vector<std::string> tokens;
     std::string token;
-    std::string log = clientName(clientSocket);
-    
+    std::string log = "CLIENT:" + std::to_string(clientSocket);
+
     // Split command from client into tokens for parsing
     std::stringstream stream(buffer);
 
-    while(stream >> token)
+    while(std::getline(stream, token, ','))
         tokens.push_back(token);
+
+    tokens.back().pop_back(); // Remove null terminator on last element
 
     if(tokens[0].compare("SHUTDOWN") == 0) {
         log += " REQUESTING SHUTDOWN";
         print(log);
         finished[0] = true;
-    }
-    if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2)) {
-        clients[clientSocket]->name = tokens[1];
-        log += " CONNECTED AS " + std::string(tokens[1]);
-        print(log);
 
     } else if(tokens[0].compare("LEAVE") == 0) {
-        // Close the socket, and leave the socket handling
-        // code to deal with tidying up servers etc. when
-        // select() detects the OS has torn down the connection.
         log += " LEFT";
         print(log);
         closeClient(clientSocket, openSockets, maxfds);
 
-    } else if(tokens[0].compare("WHO") == 0) {
+    } else if(tokens[0].compare("LISTSERVERS") == 0) {
         log += " REQUESTING CONNECED SERVERS";
         print(log);
-        // std::cout << "Who is logged on" << std::endl;
         std::string msg;
 
-        for(auto const& names : servers) {
+        for(auto const& names : servers)
             msg += serverName(names.first) + ",";
-        }
-        
-        if (msg.empty()) {
-            msg = "None,";
-        }
-        msg = "SERVERS CONNECTED: " + msg;
-        // Reducing the msg length by 1 loses the excess "," - which
-        // granted is totally cheating.
+
         send(clientSocket, msg.c_str(), msg.length()-1, 0);
 
-    } else if((tokens[0].compare("MSG") == 0) && (tokens[1].compare("ALL") == 0)) {
-        log += " SENDING MESSAGE TO ALL";
+    } else if(tokens[0].compare("GETMSG") == 0) {
+        log += " REQUESTING MESSAGES";
         print(log);
 
-        // This is slightly fragile, since it's relying on the order
-        // of evaluation of the if statement.
-        std::string msg;
-        for(auto i = tokens.begin()+2;i != tokens.end();i++) {
-            msg += *i + " ";
-        }
-        msg = "MESSAGE FROM " + clientName(clientSocket) + ": " + msg;
-        for(auto const& pair : servers) {
-            send(pair.second->sock, msg.c_str(), msg.length(),0);
-        }
+        std::ifstream read_messages("messages_to_client.txt");
+        for (std::string msg; std::getline(read_messages, msg); ) 
+            send(clientSocket, msg.c_str(), msg.length(), 0);
 
-    } else if(tokens[0].compare("MSG") == 0) {
+    } else if(tokens[0].compare("SENDMSG") == 0) {
         log += " SENDING MESSAGE TO " + std::string(tokens[1]);
         print(log);
         for(auto const& pair : servers) {
             if(pair.second->name.compare(tokens[1]) == 0) {
                 std::string msg;
-                for(auto i = tokens.begin()+2;i != tokens.end();i++) {
+                for(auto i = tokens.begin()+2; i != tokens.end(); i++) {
                     msg += *i + " ";
                 }
-                msg = "MESSAGE FROM " + clientName(clientSocket) + ": " + msg;
+                msg.pop_back();
+                msg = "*SEND_MSG," + pair.second->name + ",P3_Group_112," + msg + "#";
                 send(pair.second->sock, msg.c_str(), msg.length(),0);
             }
         }
 
     } else {
         log += " WITH AN UNKNOWN COMMAND";
+        print(log);
     }
 }
 

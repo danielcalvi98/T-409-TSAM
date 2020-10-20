@@ -28,6 +28,7 @@
 #include <map>
 
 #include <fstream> // to write to file
+#include <regex>   // regex compare
 
 std::ofstream client_log;
 
@@ -67,9 +68,13 @@ void listenServer(int serverSocket) {
             printf("Over and Out\n");
             exit(0);
         } else if(nread > 0) {
-            print(buffer);
+            // 2020-10-20 17:54:40
+            if (std::regex_search(buffer, std::regex("\\d{4}(-\\d{2}){2} \\d{2}(:\\d{2}){2}"))) {
+                printf("%s\n", buffer);
+            } else {
+                print(buffer);
+            }
         }
-        // printf("here\n");
     }
 }
 
