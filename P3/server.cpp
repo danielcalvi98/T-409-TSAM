@@ -141,7 +141,7 @@ std::string getSystemTime() {
 // custom print
 
 void print(const std::string string) {
-    std::string str = getSystemTime() + std::string(" ") + string + std::string("\n");
+    std::string str = getSystemTime() + " " + string + "\n";
     const char *cstr = str.c_str();
     printf("%s",cstr);
     server_log.open("server_log.txt", std::ios_base::app);
@@ -179,7 +179,7 @@ std::string clientName(int clientSocket) {
     if (!servers[clientSocket]->name.empty()) 
         return servers[clientSocket]->name;
     else
-        return std::string("CLIENT:") + std::to_string(clientSocket);
+        return "CLIENT:" + std::to_string(clientSocket);
 }
 
 void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer) {
@@ -195,14 +195,14 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 
     if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2)) {
         servers[clientSocket]->name = tokens[1];
-        log += std::string(" CONNECTED AS ") + std::string(tokens[1]);
+        log += " CONNECTED AS " + std::string(tokens[1]);
         print(log);
 
     } else if(tokens[0].compare("LEAVE") == 0) {
         // Close the socket, and leave the socket handling
         // code to deal with tidying up servers etc. when
         // select() detects the OS has torn down the connection.
-        log += std::string(" LEFT");
+        log += " LEFT";
         print(log);
         closeClient(clientSocket, openSockets, maxfds);
 
@@ -217,15 +217,15 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         }
         
         if (msg.empty()) {
-            msg = std::string("None,");
+            msg = "None,";
         }
-        msg = std::string("SERVERS CONNECTED: ") + msg;
+        msg = "SERVERS CONNECTED: " + msg;
         // Reducing the msg length by 1 loses the excess "," - which
         // granted is totally cheating.
         send(clientSocket, msg.c_str(), msg.length()-1, 0);
 
     } else if((tokens[0].compare("MSG") == 0) && (tokens[1].compare("ALL") == 0)) {
-        log += std::string(" SENDING MESSAGE TO ALL");
+        log += " SENDING MESSAGE TO ALL";
         print(log);
 
         // This is slightly fragile, since it's relying on the order
@@ -240,7 +240,7 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         }
 
     } else if(tokens[0].compare("MSG") == 0) {
-        log += std::string(" SENDING MESSAGE TO ") + std::string(tokens[1]);
+        log += " SENDING MESSAGE TO " + std::string(tokens[1]);
         print(log);
         for(auto const& pair : servers) {
             if(pair.second->name.compare(tokens[1]) == 0) {
@@ -254,7 +254,7 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         }
 
     } else {
-        log += std::string(" WITH AN UNKNOWN COMMAND");
+        log += " WITH AN UNKNOWN COMMAND";
     }
 }
 
@@ -281,12 +281,12 @@ int main(int argc, char* argv[]) {
     // Setup socket for server to listen to
 
     listenSock = open_socket(atoi(argv[1]));  // The server
-    log = std::string("SERVER LISTENING ON PORT: ") + std::string(argv[1]);
+    log = "SERVER LISTENING ON PORT: " + std::string(argv[1]);
     print(log);
 
 
     if(listen(listenSock, BACKLOG) < 0) {
-        log = std::string("LISTEN FAILED ON PORT: ") + std::string(argv[1]);
+        log = "LISTEN FAILED ON PORT: " + std::string(argv[1]);
         print(log);
         exit(0);
     } else {
@@ -316,8 +316,8 @@ int main(int argc, char* argv[]) {
             // First, accept  any new connections to the server on the listening socket
             if(FD_ISSET(listenSock, &readSockets)) {
                 clientSock = accept(listenSock, (struct sockaddr *)&client, &clientLen);
-                if (servers.size() < allowed_connections) {
-                    log = std::string("SERVER ACCEPT'S CLIENT:") + std::to_string(clientSock);
+                if (servers.size() < allowed_connections && clientSock > 0) {
+                    log = "SERVER ACCEPT'S CLIENT:" + std::to_string(clientSock);
                     // Add new client to the list of open sockets
                     FD_SET(clientSock, &openSockets);
 
@@ -327,12 +327,16 @@ int main(int argc, char* argv[]) {
                     // create a new client to store information.
                     servers[clientSock] = new Client(clientSock);
 
-                    // log = std::string("CLIENT:") + std::to_string(clientSock) + std::string(" CONNECTED ON SERVER");
                 } else {
                     std::string msg = "Maximum of " + std::to_string(allowed_connections) + " connections reached";
                     send(clientSock, msg.c_str(), msg.length(), 0);
                     close(clientSock);
-                    log = std::string("SERVER DOES NOT ACCEPT'S CLIENT:") + std::to_string(clientSock) + std::string(" TO MANY CONNECTIONS");
+                    log = "SERVER DOES NOT ACCEPT'S CLIENT:";
+                    if (clientSock > 0) {
+                        log += std::to_string(clientSock) + " TO MANY CONNECTIONS";
+                    } else {
+                        log += " UNABLE TO SELECT CLIENT";
+                    }
                 }
                 // Decrement the number of sockets waiting to be dealt with
                 n--;
@@ -351,7 +355,7 @@ int main(int argc, char* argv[]) {
                     if(FD_ISSET(client->sock, &readSockets)) {
                         // recv() == 0 means client has closed connection
                         if(recv(client->sock, buffer, sizeof(buffer), MSG_DONTWAIT) == 0) {
-                            log = client->name + std::string(" CLOSED CONNECTION:") + std::to_string(client->sock);
+                            log = client->name + " CLOSED CONNECTION:" + std::to_string(client->sock);
                             print(log);
 
                             closeClient(client->sock, &openSockets, &maxfds);
