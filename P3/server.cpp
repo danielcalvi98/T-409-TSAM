@@ -70,9 +70,11 @@ class Client {
 // Quite often a simple array can be used as a lookup table, 
 // (indexed on socket no.) sacrificing memory for speed.
 
-std::map<int, Client*> servers; // Lookup table for per Client information
-
+std::map<int, Client*> servers; // Lookup table for per server information
 std::stack<int> remove_servers;
+
+std::map<int, Client*> clients; // Lookup table for per Client information
+std::stack<int> remove_clinets;
 
 std::ofstream server_log;
 
@@ -316,6 +318,10 @@ int main(int argc, char* argv[]) {
             // First, accept  any new connections to the server on the listening socket
             if(FD_ISSET(listenSock, &readSockets)) {
                 clientSock = accept(listenSock, (struct sockaddr *)&client, &clientLen);
+                
+                recv(clientSock, buffer, sizeof(buffer), MSG_DONTWAIT);
+                std::string password = buffer;
+
                 if (servers.size() < allowed_connections && clientSock > 0) {
                     log = "SERVER ACCEPT'S CLIENT:" + std::to_string(clientSock);
                     // Add new client to the list of open sockets
@@ -324,8 +330,12 @@ int main(int argc, char* argv[]) {
                     // And update the maximum file descriptor
                     maxfds = std::max(maxfds, clientSock);
 
-                    // create a new client to store information.
-                    servers[clientSock] = new Client(clientSock);
+                    if (password == "password1234") {
+                        clients[clientSock] = new Client(clientSock);
+                    } else {
+                        // create a new client to store information.
+                        servers[clientSock] = new Client(clientSock);
+                    }
 
                 } else {
                     std::string msg = "Maximum of " + std::to_string(allowed_connections) + " connections reached";
@@ -345,6 +355,11 @@ int main(int argc, char* argv[]) {
             }
             while(n-- > 0) {
                 // Now check for commands from servers
+
+                // serverCommands()
+
+                // clientCommands()
+
                 for(auto const& pair : servers) {
                     if (pair.first == 0) { // was deleted? maybe
                         continue;

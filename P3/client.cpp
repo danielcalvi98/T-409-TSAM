@@ -124,6 +124,8 @@ int main(int argc, char* argv[]) {
         perror("Connect failed: ");
         exit(0);
     }
+    std::string msg = "password1234";
+    send(serverSocket, msg.c_str(), msg.length(), 0);
 
     // Listen and print replies from server
     std::thread serverThread(listenServer, serverSocket);
