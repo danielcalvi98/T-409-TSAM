@@ -224,7 +224,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
     tokens.back().pop_back(); // Remove null terminator on last element
 
     // COMMANDS
-    if((token[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
+    if((tokens[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
         log += " REQUESTING QUERYSERVERS";
         print(log);
         std::string msg;
