@@ -41,6 +41,7 @@
 #include <time.h>  // get time
 #include <stack>   // stack
 #include <fstream> // to write to file
+#include <regex>   // regex
 
 // fix SOCK_NONBLOCK for OSX
 #ifndef SOCK_NONBLOCK
@@ -197,21 +198,48 @@ std::string serverName(int clientSocket) {
 // Process command from client on the server
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
+    std::string log = serverName(clientSocket);
 
+    // Check if message is valid
+    if (!std::regex_search(buffer, std::regex("\\*.*#"))) {
+        log += " WITH AN UNKNOWN COMMAND";
+        print(log);
+        return;
+    }
+    // Remove * and #
+    std::string server_msg = buffer;
+    std::size_t msg_start = server_msg.find("*");
+    std::size_t msg_end = server_msg.find("#");
+    server_msg = server_msg.substr(msg_start+1, msg_end);
+    memcpy(buffer, server_msg.c_str(), buffersize);
+    printf("%s",buffer);
+
+    // Split command from client into tokens for parsing
     std::vector<std::string> tokens;
     std::string token;
-
-    std::string log = serverName(clientSocket);
-    // Split command from client into tokens for parsing
-
     std::stringstream stream(buffer);
-    while(stream >> token)
+    while(std::getline(stream, token, ','))
         tokens.push_back(token);
 
-    if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2)) {
+    tokens.back().pop_back(); // Remove null terminator on last element
+
+    // COMMANDS
+    if((token[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
+        log += " REQUESTING QUERYSERVERS";
+        print(log);
+        std::string msg;
+
+        for(auto const& names : servers)
+            msg += serverName(names.first) + ",";
+
+        send(clientSocket, msg.c_str(), msg.length()-1, 0);
+
+    }
+    else if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2)) {
         servers[clientSocket]->name = tokens[1];
         log += " CONNECTED AS " + std::string(tokens[1]);
         print(log);
+        
 
     } else if(tokens[0].compare("LEAVE") == 0) {
         // Close the socket, and leave the socket handling
@@ -221,23 +249,6 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         print(log);
         closeClient(clientSocket, openSockets, maxfds);
 
-    } else if(tokens[0].compare("WHO") == 0) {
-        log += " WITH COMMAND WHO";
-        print(log);
-        std::string msg;
-
-        for(auto const& names : servers) {
-            msg += serverName(names.first) + ",";
-        }
-        
-        if (msg.empty()) {
-            msg = "None,";
-        }
-        msg = "SERVERS CONNECTED: " + msg;
-        // Reducing the msg length by 1 loses the excess "," - which
-        // granted is totally cheating.
-        send(clientSocket, msg.c_str(), msg.length()-1, 0);
-
     } else if((tokens[0].compare("MSG") == 0) && (tokens[1].compare("ALL") == 0)) {
         log += " SENDING MESSAGE TO ALL";
         print(log);
@@ -245,26 +256,24 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         // This is slightly fragile, since it's relying on the order
         // of evaluation of the if statement.
         std::string msg;
-        for(auto i = tokens.begin()+2;i != tokens.end();i++) {
+        for(auto i = tokens.begin()+2;i != tokens.end();i++)
             msg += *i + " ";
-        }
+        
         msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
-        for(auto const& pair : servers) {
+        for(auto const& pair : servers) 
             send(pair.second->sock, msg.c_str(), msg.length(),0);
-        }
+        
 
     } else if(tokens[0].compare("MSG") == 0) {
         log += " SENDING MESSAGE TO " + std::string(tokens[1]);
         print(log);
         for(auto const& pair : servers) {
-            if(pair.second->name.compare(tokens[1]) == 0) {
-                std::string msg;
-                for(auto i = tokens.begin()+2;i != tokens.end();i++) {
-                    msg += *i + " ";
-                }
-                msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
-                send(pair.second->sock, msg.c_str(), msg.length(),0);
-            }
+            if(pair.second->name.compare(tokens[1]) != 0) continue;
+            std::string msg;
+            for(auto i = tokens.begin()+2;i != tokens.end();i++)
+                msg += *i + " ";
+            msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
+            send(pair.second->sock, msg.c_str(), msg.length(),0);
         }
 
     } else {
@@ -306,13 +315,24 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 
         send(clientSocket, msg.c_str(), msg.length()-1, 0);
 
-    } else if(tokens[0].compare("GETMSG") == 0) {
+    } else if(tokens[0].compare("GETMSG") == 0  && (tokens.size() == 2)) {
+        bool from_id = false;
+        if (tokens[1].compare("ALL") != 0) 
+            from_id = true;
+        
         log += " REQUESTING MESSAGES";
+        if (from_id) {
+            log += " FROM GROUP " + tokens[1];
+        }
         print(log);
 
         std::ifstream read_messages("messages_to_client.txt");
-        for (std::string msg; std::getline(read_messages, msg); ) 
+        for (std::string msg; std::getline(read_messages, msg); ) {
+            msg +="\n"; // So client knows it is a line
+            if (from_id && !std::regex_search(msg, std::regex("S3_Group_" + tokens[1])))
+                continue;
             send(clientSocket, msg.c_str(), msg.length(), 0);
+        }
 
     } else if(tokens[0].compare("SENDMSG") == 0) {
         log += " SENDING MESSAGE TO " + std::string(tokens[1]);

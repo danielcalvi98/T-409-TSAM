@@ -45,8 +45,11 @@ std::string getSystemTime() {
 
 // custom print
 
-void print(const std::string string) {
-    std::string str = getSystemTime() + std::string(" ") + string + std::string("\n");
+void print(const std::string string, bool time_stamp) {
+    std::string str;
+    if (time_stamp) str = getSystemTime() + " " + string + "\n";
+    else            str = string;
+
     const char *cstr = str.c_str();
     printf("%s",cstr);
     client_log.open("client_log.txt", std::ios_base::app);
@@ -58,7 +61,7 @@ void print(const std::string string) {
 
 void listenServer(int serverSocket) {
     int nread;                                  // Bytes read from socket
-    char buffer[1025];                          // Buffer for reading input
+    char buffer[5000];                          // Buffer for reading input
 
     while(true) {
         memset(buffer, 0, sizeof(buffer));
@@ -68,11 +71,10 @@ void listenServer(int serverSocket) {
             printf("Over and Out\n");
             exit(0);
         } else if(nread > 0) {
-            // 2020-10-20 17:54:40
             if (std::regex_search(buffer, std::regex("\\d{4}(-\\d{2}){2} \\d{2}(:\\d{2}){2}"))) {
-                printf("%s\n", buffer);
+                print(buffer, 0);
             } else {
-                print(buffer);
+                print(buffer, 1);
             }
         }
     }
