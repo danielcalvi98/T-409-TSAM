@@ -42,6 +42,8 @@
 #include <stack>   // stack
 #include <fstream> // to write to file
 #include <regex>   // regex
+#include <ifaddrs.h>// get ip
+#include <net/if.h> // get ip
 
 // fix SOCK_NONBLOCK for OSX
 #ifndef SOCK_NONBLOCK
@@ -51,13 +53,18 @@
 
 #define BACKLOG  5          // Allowed length of queue of waiting connections
 
+#define MAX_HOSTS 15
+
 // Simple class for handling connections from clients.
 //
 // Client(int socket) - socket to send/receive traffic from client.
 class Client {
   public:
-    int sock;              // socket of client connection
-    std::string name;           // Limit length of name of client's user
+    int sock;               // socket of client connection
+    std::string name = "";  // Limit length of name of client's user
+    std::string ip = "";         
+    int port = 0;       
+    int incomming;
 
     Client(int socket) : sock(socket){} 
 
@@ -80,8 +87,12 @@ std::stack<int> remove_clients;
 std::ofstream server_log;
 std::ofstream write_message;
 
+std::string HOST_NAME = "P3_Group_112";
+std::string HOST_IP;
+int HOST_PORT;
+
 // Open socket for specified port.
-//
+
 // Returns -1 if unable to create the socket for any reason.
 
 int open_socket(int portno) {
@@ -188,17 +199,10 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
     FD_CLR(clientSocket, openSockets);
 }
 
-std::string serverName(int clientSocket) {
-    if (!servers[clientSocket]->name.empty()) 
-        return servers[clientSocket]->name;
-    return "SERVER:" + std::to_string(clientSocket);
-
-}
-
 // Process command from client on the server
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
-    std::string log = serverName(clientSocket);
+    std::string log = servers[clientSocket]->name;
 
     // Check if message is valid
     if (!std::regex_search(buffer, std::regex("\\*.*#"))) {
@@ -206,37 +210,48 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         print(log);
         return;
     }
-    // Remove * and #
-    std::string server_msg = buffer;
-    std::size_t msg_start = server_msg.find("*");
-    std::size_t msg_end = server_msg.find("#");
-    server_msg = server_msg.substr(msg_start+1, msg_end);
-    memcpy(buffer, server_msg.c_str(), buffersize);
-    printf("%s",buffer);
 
-    // Split command from client into tokens for parsing
+    // parse string
     std::vector<std::string> tokens;
     std::string token;
-    std::stringstream stream(buffer);
-    while(std::getline(stream, token, ','))
-        tokens.push_back(token);
-
-    tokens.back().pop_back(); // Remove null terminator on last element
-
+    bool start = false;
+    for (int i = 0; i < buffersize; i++) {
+        if (start) {
+            if (buffer[i] == ',' || buffer[i] == ';' || buffer[i] == '#') {
+                tokens.push_back(token);
+                token = "";
+                if (buffer[i] == '#') break;
+                continue;
+            }
+            token += buffer[i];
+        }
+        if (buffer[i] == '*') start = true;
+    }
+    
     // COMMANDS
     if((tokens[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
-        log += " REQUESTING QUERYSERVERS";
+        log = tokens[1] + " REQUESTING QUERYSERVERS";
         print(log);
-        std::string msg;
+        std::string msg = "*CONNECTED,";
+        
+        msg += HOST_NAME + ",";
+        msg += HOST_IP + ",";
+        msg += std::to_string(HOST_PORT) + ";";
 
-        for(auto const& names : servers)
-            msg += serverName(names.first) + ",";
+        for(auto const& server : servers) {
+            if (server.second->name.empty()) continue;
+            msg += server.second->name + ",";
+            msg += server.second->ip + ",";
+            msg += std::to_string(server.second->port) + ";";
+        }
+        msg += "#";
 
-        send(clientSocket, msg.c_str(), msg.length()-1, 0);
+        send(clientSocket, msg.c_str(), msg.length(), 0);
 
-    }
-    else if((tokens[0].compare("CONNECT") == 0) && (tokens.size() == 2)) {
+    } else if(tokens[0].compare("CONNECTED") == 0) {
         servers[clientSocket]->name = tokens[1];
+        servers[clientSocket]->ip   = tokens[2];
+        servers[clientSocket]->port = atoi(tokens[3].c_str());
         log += " CONNECTED AS " + std::string(tokens[1]);
         print(log);
         
@@ -259,7 +274,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         for(auto i = tokens.begin()+2;i != tokens.end();i++)
             msg += *i + " ";
         
-        msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
+        msg = "MESSAGE FROM " + servers[clientSocket]->name + ": " + msg;
         for(auto const& pair : servers) 
             send(pair.second->sock, msg.c_str(), msg.length(),0);
         
@@ -272,7 +287,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
             std::string msg;
             for(auto i = tokens.begin()+2;i != tokens.end();i++)
                 msg += *i + " ";
-            msg = "MESSAGE FROM " + serverName(clientSocket) + ": " + msg;
+            msg = "MESSAGE FROM " + servers[clientSocket]->name + ": " + msg;
             send(pair.second->sock, msg.c_str(), msg.length(),0);
         }
 
@@ -311,7 +326,7 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         std::string msg;
 
         for(auto const& names : servers)
-            msg += serverName(names.first) + ",";
+            msg += names.second->name + ",";
 
         send(clientSocket, msg.c_str(), msg.length()-1, 0);
 
@@ -344,7 +359,7 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
                     msg += *i + " ";
                 }
                 msg.pop_back();
-                msg = "*SEND_MSG," + pair.second->name + ",P3_Group_112," + msg + "#";
+                msg = "*SEND_MSG," + pair.second->name + "," + HOST_NAME + "," + msg + "#";
                 send(pair.second->sock, msg.c_str(), msg.length(),0);
             }
         }
@@ -374,7 +389,7 @@ void checkServerCommands(char *buffer, int buffersize, fd_set *openSockets, fd_s
             } else {
                 // We don't check for -1 (nothing received) because select()
                 // only triggers if there is something on the socket for us.
-                serverCommand(client->sock, openSockets, maxfds, buffer, sizeof(buffer));
+                serverCommand(client->sock, openSockets, maxfds, buffer, buffersize);
             }
         }
     }
@@ -404,7 +419,7 @@ void checkClientCommands(char *buffer, int buffersize, fd_set *openSockets, fd_s
                 // We don't check for -1 (nothing received) because select()
                 // only triggers if there is something on the socket for us.
             
-                clientCommand(client->sock, openSockets, maxfds, buffer, sizeof(buffer), finished);
+                clientCommand(client->sock, openSockets, maxfds, buffer, buffersize, finished);
             }
         }
     }
@@ -412,6 +427,21 @@ void checkClientCommands(char *buffer, int buffersize, fd_set *openSockets, fd_s
         clients.erase(remove_clients.top());
         remove_clients.pop();
     }
+}
+
+std::string get_ip(){
+    FILE *fpipe;
+    const char *command = "hostname -I";
+    char c = 0;
+
+    fpipe = (FILE*) popen(command, "r");
+    std::string ip;
+    while (fread(&c, sizeof(c), 1, fpipe)) {
+        if (c == ' ') break;
+        ip += c;
+    }
+    pclose(fpipe);
+    return ip;
 }
 
 int main(int argc, char* argv[]) {
@@ -427,19 +457,22 @@ int main(int argc, char* argv[]) {
     char buffer[5000];              // buffer for reading from servers
 
     std::string log;
-    int allowed_connections = 2;
+    int allowed_connections = 15;
 
+    
     if(argc != 2) {
         printf("Usage: chat_server <ip port>\n");
         exit(0);
     }
+
+    HOST_IP = get_ip();
+    HOST_PORT = atoi(argv[1]);
 
     // Setup socket for server to listen to
 
     listenSock = open_socket(atoi(argv[1]));  // The server
     log = "SERVER LISTENING ON PORT: " + std::string(argv[1]);
     print(log);
-
 
     if(listen(listenSock, BACKLOG) < 0) {
         log = "LISTEN FAILED ON PORT: " + std::string(argv[1]);
