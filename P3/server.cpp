@@ -202,6 +202,7 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
 // Process command from client on the server
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
+    std::string cli_name = servers[clientSocket]->name;
     std::string log = servers[clientSocket]->name;
 
     // Check if message is valid
@@ -252,16 +253,18 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         servers[clientSocket]->name = tokens[1];
         servers[clientSocket]->ip   = tokens[2];
         servers[clientSocket]->port = atoi(tokens[3].c_str());
-        log = tokens[1] + " CONNECTED AS " + std::string(tokens[1]);
-        print(log);
-    
+        print(tokens[1] + " CONNECTED AS " + tokens[1]);
+
     } else if ((tokens[0].compare("KEEPALIVE") == 0) && (tokens.size() == 2)) {
-        log += " REQUESTING KEEPALIVE";
+        std::string log = cli_name + " REQUESTING KEEPALIVE";
+
+        // Check if digit
         bool digit = true;
         for (char& chr : tokens[1]) {
             if (isdigit((int) chr)) continue;
             digit = false;
         }
+
         if (digit) {
             servers[clientSocket]->incomming = atoi(tokens[1].c_str());
         } else {
@@ -278,44 +281,35 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         closeClient(clientSocket, openSockets, maxfds);
 
     } else if((tokens[0].compare("GET_MSG") == 0) && (tokens.size() == 2)) {
-        log += " REQUESTING MESSAGES";
+        print(cli_name + " REQUESTING MESSAGES FOR " + tokens[1]);
         
         for(auto const& pair : servers) {
             if (pair.second->name.compare(tokens[1]) == 0) {
-                for (std::string message : messages[clientSocket]) {
+                for (std::string message : messages[pair.second->sock])
                     send(pair.second->sock, msg.c_str(), msg.length(), 0);
-                }
                 messages[clientSocket].clear();
             }
-            
         }
-        
-        print(log);
 
-        // This is slightly fragile, since it's relying on the order
-        // of evaluation of the if statement.
+
+    } else if((tokens[0].compare("SEND_MSG") == 0) && (tokens.size() > 2)) {
+        print(tokens[2] + " SENDING MESSAGE TO " + tokens[1]);
+
+        // Create msg
         std::string msg;
-        for(auto i = tokens.begin()+2;i != tokens.end();i++)
-            msg += *i + " ";
-        
-        msg = "MESSAGE FROM " + servers[clientSocket]->name + ": " + msg;
-        
+        for(auto i = tokens.begin()+2; i != tokens.end(); i++) msg += *i + " ";
+        msg.pop_back(); // remove space
 
-    } else if(tokens[0].compare("MSG") == 0) {
-        log += " SENDING MESSAGE TO " + std::string(tokens[1]);
-        print(log);
+        // Save message
         for(auto const& pair : servers) {
-            if(pair.second->name.compare(tokens[1]) != 0) continue;
-            std::string msg;
-            for(auto i = tokens.begin()+2;i != tokens.end();i++)
-                msg += *i + " ";
-            msg = "MESSAGE FROM " + servers[clientSocket]->name + ": " + msg;
-            send(pair.second->sock, msg.c_str(), msg.length(),0);
+            if (pair.second->name.compare(tokens[1]) == 0) {
+                msg = "*SEND_MSG," + tokens[1] + "," + tokens[2] + "," + msg + "#";
+                messages[pair.second->sock].add(msg);
+            }
         }
 
     } else {
-        log += " WITH AN UNKNOWN COMMAND";
-        print(log);
+        print(cli_name + " WITH AN UNKNOWN COMMAND");
     }
 }
 
