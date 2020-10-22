@@ -252,9 +252,22 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         servers[clientSocket]->name = tokens[1];
         servers[clientSocket]->ip   = tokens[2];
         servers[clientSocket]->port = atoi(tokens[3].c_str());
-        log += " CONNECTED AS " + std::string(tokens[1]);
+        log = tokens[1] + " CONNECTED AS " + std::string(tokens[1]);
         print(log);
-        
+    
+    } else if ((tokens[0].compare("KEEPALIVE") == 0) && (tokens.size() == 2)) {
+        log += " REQUESTING KEEPALIVE";
+        bool digit = true;
+        for (char& chr : tokens[1]) {
+            if (isdigit((int) chr)) continue;
+            digit = false;
+        }
+        if (digit) {
+            servers[clientSocket]->incomming = atoi(tokens[1].c_str());
+        } else {
+            log += " - WITH INVALID ARGUMENT";
+        }
+        print(log);
 
     } else if(tokens[0].compare("LEAVE") == 0) {
         // Close the socket, and leave the socket handling
@@ -264,8 +277,19 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         print(log);
         closeClient(clientSocket, openSockets, maxfds);
 
-    } else if((tokens[0].compare("MSG") == 0) && (tokens[1].compare("ALL") == 0)) {
-        log += " SENDING MESSAGE TO ALL";
+    } else if((tokens[0].compare("GET_MSG") == 0) && (tokens.size() == 2)) {
+        log += " REQUESTING MESSAGES";
+        
+        for(auto const& pair : servers) {
+            if (pair.second->name.compare(tokens[1]) == 0) {
+                for (std::string message : messages[clientSocket]) {
+                    send(pair.second->sock, msg.c_str(), msg.length(), 0);
+                }
+                messages[clientSocket].clear();
+            }
+            
+        }
+        
         print(log);
 
         // This is slightly fragile, since it's relying on the order
@@ -275,8 +299,6 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
             msg += *i + " ";
         
         msg = "MESSAGE FROM " + servers[clientSocket]->name + ": " + msg;
-        for(auto const& pair : servers) 
-            send(pair.second->sock, msg.c_str(), msg.length(),0);
         
 
     } else if(tokens[0].compare("MSG") == 0) {
