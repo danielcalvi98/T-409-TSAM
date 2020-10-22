@@ -64,7 +64,8 @@ class Client {
     std::string name = "";  // Limit length of name of client's user
     std::string ip = "";         
     int port = 0;       
-    int incomming;
+    int incomming = 0;
+    int outgoing = 0;
 
     Client(int socket) : sock(socket){} 
 
@@ -83,6 +84,8 @@ std::stack<int> remove_servers;
 
 std::map<int, Client*> clients; // Lookup table for per Client information
 std::stack<int> remove_clients;
+
+std::map<std::string, std::vector<std::string>> messages; // Lookup table for per Client messages
 
 std::ofstream server_log;
 std::ofstream write_message;
@@ -230,6 +233,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
     }
     
     // COMMANDS
+    // QUERYSERVERS,<FROM_GROUP_ID>
     if((tokens[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
         log = tokens[1] + " REQUESTING QUERYSERVERS";
         print(log);
@@ -249,12 +253,14 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 
         send(clientSocket, msg.c_str(), msg.length(), 0);
 
+    // CONNECTED,<HOST_NAME>,<HOST_IP>,<HOST_PORT>;<OTHER_NAME>,<OTHER_IP>,<OTHER_PORT>;...;
     } else if(tokens[0].compare("CONNECTED") == 0) {
         servers[clientSocket]->name = tokens[1];
         servers[clientSocket]->ip   = tokens[2];
         servers[clientSocket]->port = atoi(tokens[3].c_str());
         print(tokens[1] + " CONNECTED AS " + tokens[1]);
 
+    // KEEPALIVE,<NUMBER_OF_MESSAGES>
     } else if ((tokens[0].compare("KEEPALIVE") == 0) && (tokens.size() == 2)) {
         std::string log = cli_name + " REQUESTING KEEPALIVE";
 
@@ -272,41 +278,53 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         }
         print(log);
 
-    } else if(tokens[0].compare("LEAVE") == 0) {
-        // Close the socket, and leave the socket handling
-        // code to deal with tidying up servers etc. when
-        // select() detects the OS has torn down the connection.
-        log += " LEFT";
-        print(log);
-        closeClient(clientSocket, openSockets, maxfds);
-
+    // GET_MSG,<GROUP_ID>
     } else if((tokens[0].compare("GET_MSG") == 0) && (tokens.size() == 2)) {
         print(cli_name + " REQUESTING MESSAGES FOR " + tokens[1]);
         
-        for(auto const& pair : servers) {
-            if (pair.second->name.compare(tokens[1]) == 0) {
-                for (std::string message : messages[pair.second->sock])
-                    send(pair.second->sock, msg.c_str(), msg.length(), 0);
-                messages[clientSocket].clear();
-            }
-        }
-
-
+        // Send all messages as that were requested
+        if (messages.find(tokens[1]) != messages.end()) 
+            for (std::string msg: messages[tokens[1]]) 
+                send(clientSocket, msg.c_str(), msg.length(), 0);
+            messages[tokens[1]].clear();
+        
+    // SEND_MSG,<TO_GROUP_ID>,<FROM_GROUP_ID>,<MESSAGE_CONTENT>
     } else if((tokens[0].compare("SEND_MSG") == 0) && (tokens.size() > 2)) {
-        print(tokens[2] + " SENDING MESSAGE TO " + tokens[1]);
+        print(cli_name + " SENDING MESSAGE FROM " + tokens[2] + " TO " + tokens[1]);
 
         // Create msg
         std::string msg;
-        for(auto i = tokens.begin()+2; i != tokens.end(); i++) msg += *i + " ";
+        for(auto i = tokens.begin()+3; i != tokens.end(); i++) msg += *i + " ";
         msg.pop_back(); // remove space
+        msg = "*SEND_MSG," + tokens[1] + "," + tokens[2] + "," + msg + "#";
 
         // Save message
+        messages[tokens[1]].push_back(msg);
+       
+    
+    // LEAVE,<SERVER_IP>,<SERVER_PORT>
+    } else if((tokens[0].compare("LEAVE") == 0) && (tokens.size() == 3)) {
+
         for(auto const& pair : servers) {
-            if (pair.second->name.compare(tokens[1]) == 0) {
-                msg = "*SEND_MSG," + tokens[1] + "," + tokens[2] + "," + msg + "#";
-                messages[pair.second->sock].add(msg);
+            if ((pair.second->ip.compare(tokens[1]) == 0) && (pair.second->port == atoi(tokens[2].c_str()))) {
+                print(pair.second->name + " LEFT");
+                closeClient(pair.second->sock, openSockets, maxfds);
             }
         }
+
+    // STATUSREQ,<FROM_GROUP>
+    } else if((tokens[0].compare("STATUSREQ") == 0) && (tokens.size() == 2)) {
+        print(cli_name + " REQUESTING STATUSREQ");
+
+        std::string msg = "*STATUSRESP,";
+        for(auto const& pair : messages) {
+            msg += pair.first + ",";
+            msg += std::to_string(pair.second.size()) + ",";
+        }
+        msg.pop_back();
+        msg += "#";
+
+        send(clientSocket, msg.c_str(), msg.length(), 0);
 
     } else {
         print(cli_name + " WITH AN UNKNOWN COMMAND");
