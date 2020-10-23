@@ -206,12 +206,10 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
     std::string cli_name = servers[clientSocket]->name;
-    std::string log = servers[clientSocket]->name;
 
     // Check if message is valid
     if (!std::regex_search(buffer, std::regex("\\*.*#"))) {
-        log += " WITH AN UNKNOWN COMMAND";
-        print(log);
+        print(cli_name + " WITH AN UNKNOWN COMMAND");
         return;
     }
 
@@ -235,8 +233,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
     // COMMANDS
     // QUERYSERVERS,<FROM_GROUP_ID>
     if((tokens[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
-        log = tokens[1] + " REQUESTING QUERYSERVERS";
-        print(log);
+        print(tokens[1] + " REQUESTING QUERYSERVERS");
         std::string msg = "*CONNECTED,";
         
         msg += HOST_NAME + ",";
@@ -258,7 +255,7 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         servers[clientSocket]->name = tokens[1];
         servers[clientSocket]->ip   = tokens[2];
         servers[clientSocket]->port = atoi(tokens[3].c_str());
-        print(tokens[1] + " CONNECTED AS " + tokens[1]);
+        print("SERVER " + std::to_string(clientSocket) + " CONNECTED AS " + tokens[1]);
 
     // KEEPALIVE,<NUMBER_OF_MESSAGES>
     } else if ((tokens[0].compare("KEEPALIVE") == 0) && (tokens.size() == 2)) {
@@ -316,15 +313,19 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
     } else if((tokens[0].compare("STATUSREQ") == 0) && (tokens.size() == 2)) {
         print(cli_name + " REQUESTING STATUSREQ");
 
-        std::string msg = "*STATUSRESP,";
+        std::string msg = "*STATUSRESP," + HOST_NAME + "," + tokens[1];
         for(auto const& pair : messages) {
-            msg += pair.first + ",";
-            msg += std::to_string(pair.second.size()) + ",";
+            if (pair.second.size() == 0) continue;
+            msg += "," + pair.first;
+            msg += "," + std::to_string(pair.second.size());
         }
-        msg.pop_back();
         msg += "#";
 
         send(clientSocket, msg.c_str(), msg.length(), 0);
+
+    // STATUSRESP,<FROM_GROUP_1>,<NR_OF_MESSAGES_TO_GROUP_1>
+    } else if((tokens[0].compare("STATUSRESP") == 0) && (tokens.size() >= 3)) {
+        print(cli_name + " SENDING STATUSRESP");
 
     } else {
         print(cli_name + " WITH AN UNKNOWN COMMAND");
@@ -434,7 +435,6 @@ void checkServerCommands(char *buffer, int buffersize, fd_set *openSockets, fd_s
 }
 
 void checkClientCommands(char *buffer, int buffersize, fd_set *openSockets, fd_set *readSockets, int *maxfds, bool *finished) {
-    
     for(auto const& pair : clients) {
         if (pair.first == 0) { // was deleted
             continue;
@@ -480,109 +480,142 @@ std::string get_ip(){
 
 int main(int argc, char* argv[]) {
     bool finished[2];
-    int listenSock;                 // Socket for connections to server
-    int clientSock;                 // Socket of connecting client
-    fd_set openSockets;             // Current open sockets 
-    fd_set readSockets;             // Socket list for select()        
-    fd_set exceptSockets;           // Exception socket list
-    int maxfds;                     // Passed to select() as max fd in set
-    struct sockaddr_in client;
-    socklen_t clientLen;
     char buffer[5000];              // buffer for reading from servers
 
-    std::string log;
-    int allowed_connections = 15;
+    // Server connection
+    int listenServerSock;           // Socket for server connections to server
+    int serverSock;                 // Socket of connecting servers
+    fd_set openServerSockets;       // Current open server sockets 
+    fd_set readServerSockets;       // Server socket list for select()  
+    fd_set exceptServerSockets;     // Exception server socket list
+    int maxfdsServer;               // Passed to server select() as max fd in set
+    struct sockaddr_in server_addr;
+    socklen_t serverLen;
+
+    // Client connection
+    int listenClientSock;           // Socket for client connections to server
+    int clientSock;                 // Socket of connecting clients
+    fd_set openClientSockets;       // Current open client sockets 
+    fd_set readClientSockets;       // Client socket list for select()  
+    fd_set exceptClientSockets;     // Exception client socket list
+    int maxfdsClient;               // Passed to client select() as max fd in set
+    struct sockaddr_in client_addr;
+    socklen_t clientLen;
 
     
-    if(argc != 2) {
-        printf("Usage: chat_server <ip port>\n");
+    if(argc != 3) {
+        printf("Usage: chat_server <ip port servers> <ip port clients>\n");
         exit(0);
     }
+    int clientPort = atoi(argv[2]);
 
     HOST_IP = get_ip();
     HOST_PORT = atoi(argv[1]);
 
-    // Setup socket for server to listen to
-
-    listenSock = open_socket(atoi(argv[1]));  // The server
-    log = "SERVER LISTENING ON PORT: " + std::string(argv[1]);
-    print(log);
-
-    if(listen(listenSock, BACKLOG) < 0) {
-        log = "LISTEN FAILED ON PORT: " + std::string(argv[1]);
-        print(log);
+    // Setup sockets to listen to servers
+    listenServerSock = open_socket(HOST_PORT);   // Listen to servers
+    print("SERVER LISTENING ON PORT: " + std::to_string(HOST_PORT));
+    if(listen(listenServerSock, BACKLOG) < 0) {
+        print("LISTEN FAILED ON PORT: " + std::to_string(HOST_PORT));
         exit(0);
-    } else {
-        // Add listen socket to socket set we are monitoring
-        FD_ZERO(&openSockets);
-        FD_SET(listenSock, &openSockets);
-        maxfds = listenSock;
     }
+    FD_ZERO(&openServerSockets);
+    FD_SET(listenServerSock, &openServerSockets);
+    maxfdsServer = listenServerSock;
+    
+    // Setup socket to listen to clients
+    listenClientSock = open_socket(clientPort);  // Listen to clients
+    if(listen(listenClientSock, BACKLOG) < 0) {
+        print("LISTEN FAILED ON PORT: " + std::to_string(clientPort));
+        exit(0);
+    }
+    FD_ZERO(&openClientSockets);
+    FD_SET(listenClientSock, &openClientSockets);
+    maxfdsClient = listenClientSock;
 
     finished[0] = false;
     while(!finished[0]) {
-        // std::cout << "while" << std::endl;
-
-        // Get modifiable copy of readSockets
-        readSockets = exceptSockets = openSockets;
+        // Get modifiable copy of readServerSockets
+        readServerSockets = exceptServerSockets = openServerSockets;
         memset(buffer, 0, sizeof(buffer));
 
         // Look at sockets and see which ones have something to be read()
-        int n = select(maxfds + 1, &readSockets, NULL, &exceptSockets, NULL);
+        int n = select(maxfdsServer + 1, &readServerSockets, NULL, &exceptServerSockets, NULL);
 
-        if(n < 0) {
-            log = getSystemTime() + " SELECT FAILED - SHUTTING DOWN\n";
-            perror(log.c_str());
+        if(n < 0){
+            print("SELECT FAILED - SHUTTING DOWN");
             finished[0] = true;
         } else {
-            // First, accept  any new connections to the server on the listening socket
-            if(FD_ISSET(listenSock, &readSockets)) {
-                clientSock = accept(listenSock, (struct sockaddr *)&client, &clientLen);
-                
-                recv(clientSock, buffer, sizeof(buffer), MSG_DONTWAIT);
-                std::string password = buffer;
-
-                if (servers.size() < allowed_connections && clientSock > 0) {
-                    log = "SERVER ACCEPT'S ";;
+            // First, accept  any new server connections to the server
+            if(FD_ISSET(listenServerSock, &readServerSockets)) {
+                serverSock = accept(listenServerSock, (struct sockaddr *) &server_addr, &serverLen);
+            
+                if (servers.size() < MAX_HOSTS && serverSock > 0) {
+                    print("SERVER ACCEPT'S SERVER ON SOCKET " + std::to_string(serverSock));
                     // Add new client to the list of open sockets
-                    FD_SET(clientSock, &openSockets);
+                    FD_SET(serverSock, &openServerSockets);
 
                     // And update the maximum file descriptor
-                    maxfds = std::max(maxfds, clientSock);
+                    maxfdsServer = std::max(maxfdsServer, serverSock);
 
                     // create a new client to store information.
-                    if (password == "password1234") {
-                        log += "CLIENT:" + std::to_string(clientSock);
-                        clients[clientSock] = new Client(clientSock);
-                    } else {
-                        log += "SERVER:" + std::to_string(clientSock);
-                        servers[clientSock] = new Client(clientSock);
-                    }
+                    servers[serverSock] = new Client(serverSock);
 
                 } else {
-                    std::string msg = "Maximum of " + std::to_string(allowed_connections) + " connections reached";
-                    send(clientSock, msg.c_str(), msg.length(), 0);
-                    close(clientSock);
-                    log = "SERVER DOES NOT ACCEPT'S CLIENT:";
-                    if (clientSock > 0) {
-                        log += std::to_string(clientSock) + " TO MANY CONNECTIONS";
+                    close(serverSock);
+                    std::string log = "SERVER DOES NOT ACCEPT'S SERVER ON SOCKET";
+                    if (serverSock > 0) {
+                        log += " " + std::to_string(serverSock) + ": TO MANY CONNECTIONS";
                     } else {
-                        log += " UNABLE TO SELECT CLIENT";
+                        log += ": UNABLE TO SELECT";
                     }
+                    print(log);
                 }
-                // Decrement the number of sockets waiting to be dealt with
-                n--;
-                print(log);
-                
+                n--; // Decrement the number of sockets waiting to be dealt with
             }
             while(n-- > 0) {
-
                 // Now check for commands from servers and clients
-                checkServerCommands(buffer, sizeof(buffer), &openSockets, &readSockets, &maxfds);
-
-                checkClientCommands(buffer, sizeof(buffer), &openSockets, &readSockets, &maxfds, finished);
+                checkServerCommands(buffer, sizeof(buffer), &openServerSockets, &readServerSockets, &maxfdsServer);
             }
         }
+    
+        // Get modifiable copy of readClientSockets
+        // readClientSockets = exceptClientSockets = openClientSockets;
+        // memset(buffer, 0, sizeof(buffer));
+
+        // // Look at sockets and see which ones have something to be read()
+        // n = select(maxfdsClient + 1, &readClientSockets, NULL, &exceptClientSockets, NULL);
+
+        // if(n < 0){
+        //     print("SELECT FAILED - SHUTTING DOWN");
+        //     finished[0] = true;
+        // } else {
+        //     // First, accept  any new client connections to the client
+        //     if(FD_ISSET(listenClientSock, &readClientSockets)) {
+        //         clientSock = accept(listenClientSock, (struct sockaddr *) &client_addr, &clientLen);
+            
+        //         if (clients.size() < MAX_HOSTS && clientSock > 0) {
+        //             print("SERVER ACCEPT'S CLIENT ON SOCKET " + std::to_string(clientSock));
+        //             // Add new client to the list of open sockets
+        //             FD_SET(clientSock, &openClientSockets);
+
+        //             // And update the maximum file descriptor
+        //             maxfdsClient = std::max(maxfdsClient, clientSock);
+
+        //             // create a new client to store information.
+        //             clients[clientSock] = new Client(clientSock);
+
+        //         } else {
+        //             close(clientSock);
+        //             print("SERVER DOES NOT ACCEPT'S CLIENT ON SOCKET: UNABLE TO SELECT");
+        //         }
+        //         n--; // Decrement the number of sockets waiting to be dealt with
+        //     }
+        //     while(n-- > 0) {
+        //         // Now check for commands from servers and clients
+        //         checkClientCommands(buffer, sizeof(buffer), &openClientSockets, &readClientSockets, &maxfdsClient, finished);
+        //     }
+        // }
     }
     print("SERVER IS SHUTTING DOWN");
 }
