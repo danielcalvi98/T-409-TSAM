@@ -207,27 +207,30 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
     std::string cli_name = servers[clientSocket]->name;
 
-    // Check if message is valid
-    if (!std::regex_search(buffer, std::regex("\\*.*#"))) {
-        print(cli_name + " WITH AN UNKNOWN COMMAND");
-        return;
-    }
-
     // parse string
     std::vector<std::string> tokens;
     std::string token;
-    bool start = false;
+    bool start = false, end = false;
     for (int i = 0; i < buffersize; i++) {
         if (start) {
             if (buffer[i] == ',' || buffer[i] == ';' || buffer[i] == '#') {
                 tokens.push_back(token);
                 token = "";
-                if (buffer[i] == '#') break;
+                if (buffer[i] == '#') {
+                    end = true;
+                    break;
+                }
                 continue;
             }
             token += buffer[i];
         }
         if (buffer[i] == '*') start = true;
+    }
+
+    // Check if message is valid
+    if (!(start && end)) {
+        print(cli_name + " WITH AN UNKNOWN COMMAND");
+        return;
     }
     
     // COMMANDS
@@ -425,7 +428,6 @@ void checkServerCommands(char *buffer, int buffersize, fd_set *openSockets, fd_s
 }
 
 void checkClientCommands(char *buffer, int buffersize, fd_set *openSockets, fd_set *readSockets, int *maxfds, bool *finished) {
-    printf("ENTERRD CHECK CLIENT COMMANDS");
     for(auto const& pair : clients) {
         if (pair.first == 0) { // was deleted
             continue;
