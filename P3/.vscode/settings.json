@@ -9,6 +9,7 @@
         "string": "cpp",
         "string_view": "cpp",
         "cmath": "cpp",
-        "unordered_map": "cpp"
+        "unordered_map": "cpp",
+        "typeinfo": "cpp"
     }
 }

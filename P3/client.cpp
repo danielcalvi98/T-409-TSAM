@@ -45,10 +45,8 @@ std::string getSystemTime() {
 
 // custom print
 
-void print(const std::string string, bool time_stamp) {
-    std::string str;
-    if (time_stamp) str = getSystemTime() + " " + string + "\n";
-    else            str = string;
+void print(const std::string string) {
+    std::string str = getSystemTime() + " " + string + "\n";
 
     const char *cstr = str.c_str();
     printf("%s",cstr);
@@ -71,11 +69,7 @@ void listenServer(int serverSocket) {
             printf("Over and Out\n");
             exit(0);
         } else if(nread > 0) {
-            if (std::regex_search(buffer, std::regex("\\d{4}(-\\d{2}){2} \\d{2}(:\\d{2}){2}"))) {
-                print(buffer, 0);
-            } else {
-                print(buffer, 1);
-            }
+            print(buffer);
         }
     }
 }
@@ -85,7 +79,7 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in serv_addr;           // Socket address for server
     int serverSocket;                         // Socket used for server 
     int nwrite;                               // No. bytes written to server
-    char buffer[1025];                        // buffer for writing to server
+    char buffer[5000];                        // buffer for writing to server
     bool finished;                   
     int set = 1;                              // Toggle for setsockopt
 
@@ -130,6 +124,8 @@ int main(int argc, char* argv[]) {
         perror("Connect failed: ");
         exit(0);
     }
+    std::string passcode = "password123";
+    send(serverSocket, passcode.c_str(), passcode.length(), 0);
 
     // Listen and print replies from server
     std::thread serverThread(listenServer, serverSocket);

@@ -39,6 +39,7 @@
 
 
 #include <time.h>  // get time
+#include <chrono>  // get timeunits
 #include <stack>   // stack
 #include <fstream> // to write to file
 
@@ -388,6 +389,8 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
                 send(pair.second->sock, msg.c_str(), msg.length(),0);
             }
         }
+    } else if(tokens[0].compare("CONNECT") == 0 && tokens.size() == 3) {
+        // make server connect
 
     } else {
         log += " WITH AN UNKNOWN COMMAND";
@@ -468,6 +471,27 @@ std::string get_ip(){
     return ip;
 }
 
+void updateServer(){
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    
+    // Connect all non connected servers
+    for(auto const& pair : servers) {
+        if (pair.second->name.empty()) {
+            // send queryservers
+
+            // put into 1 hop and 2 hop servers
+        } else {
+            if(messages.find(pair.second->name) != messages.end()) {
+                std::string msg = "KEEPALIVE," + std::to_string(messages[pair.second->name].size());
+                send(pair.second->sock, msg.c_str(), msg.length(),0);
+                // send queryservers ? maybe
+
+                // if send queryservers, put into 1 hop and 2 hop severs
+            }
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
     bool finished[2];
     char buffer[5000];              // buffer for reading from servers
@@ -513,6 +537,8 @@ int main(int argc, char* argv[]) {
     FD_SET(listenClientSock, &openSockets);
     maxfds = std::max(listenServerSock, listenClientSock);
 
+    std::thread getUpdates(updateServer);
+
     finished[0] = false;
     while(!finished[0]) {
         // Get modifiable copy of readServerSockets
@@ -529,8 +555,10 @@ int main(int argc, char* argv[]) {
             // First, accept  any new client connections to the server
             if(FD_ISSET(listenClientSock, &readSockets)) {
                 clientSock = accept(listenClientSock, (struct sockaddr *) &client_addr, &clientLen);
-            
-                if (clients.size() < MAX_HOSTS && clientSock > 0) {
+                char passcode[20];
+                recv(clientSock, passcode, sizeof(passcode), 0); // this is only enough too keep mindless processies of our server
+
+                if (clients.size() < MAX_HOSTS && clientSock > 0 && std::string(passcode).compare("password123") == 0) {
                     print("SERVER ACCEPT'S CLIENT ON SOCKET " + std::to_string(clientSock));
                     // Add new client to the list of open sockets
                     FD_SET(clientSock, &openSockets);
