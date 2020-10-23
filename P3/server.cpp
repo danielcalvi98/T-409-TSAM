@@ -41,9 +41,6 @@
 #include <time.h>  // get time
 #include <stack>   // stack
 #include <fstream> // to write to file
-#include <regex>   // regex
-#include <ifaddrs.h>// get ip
-#include <net/if.h> // get ip
 
 // fix SOCK_NONBLOCK for OSX
 #ifndef SOCK_NONBLOCK
