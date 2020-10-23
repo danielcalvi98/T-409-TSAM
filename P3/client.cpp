@@ -125,14 +125,11 @@ int main(int argc, char* argv[]) {
         perror("setsockopt failed: ");
     }
 
-   
-    std::string msg = "password1234";
     if(connect(serverSocket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         printf("Failed to open socket to server: %s\n", argv[1]);
         perror("Connect failed: ");
         exit(0);
     }
-    send(serverSocket, msg.c_str(), msg.length(), 0);
 
     // Listen and print replies from server
     std::thread serverThread(listenServer, serverSocket);
