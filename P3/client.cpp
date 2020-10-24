@@ -76,7 +76,7 @@ void listenServer(int serverSocket) {
 
 int main(int argc, char* argv[]) {
     struct addrinfo hints, *svr;              // Network host entry for server
-    struct sockaddr_in serv_addr;           // Socket address for server
+    struct sockaddr_in serv_addr;             // Socket address for server
     int serverSocket;                         // Socket used for server 
     int nwrite;                               // No. bytes written to server
     char buffer[5000];                        // buffer for writing to server
@@ -84,7 +84,7 @@ int main(int argc, char* argv[]) {
     int set = 1;                              // Toggle for setsockopt
 
     if(argc != 3) {
-        printf("Usage: chat_client <ip  port>\n");
+        printf("Usage: chat_client <ip address> <ip  port>\n");
         printf("Ctrl-C to terminate\n");
         exit(0);
     }

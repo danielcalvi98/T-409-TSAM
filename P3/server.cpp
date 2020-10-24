@@ -200,6 +200,18 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
     FD_CLR(clientSocket, openSockets);
 }
 
+
+void queryServers(int clientSocket) {
+    print("SENDING QUERYSERVERS TO CLIENT:" + std::to_string(clientSocket));
+    std::string msg = "*QUERYSERVERS," + HOST_NAME + "#";
+    send(clientSocket, msg.c_str(), msg.length(), 0);
+}
+
+void keepAlive(int clientSocket) {
+    print("SENDING KEEPALIVE TO CLIENT:" + std::to_string(clientSocket));
+    std::string msg = "*KEEPALIVE," + std::to_string(servers[clientSocket]->outgoing) + "#";
+    send(clientSocket, msg.c_str(), msg.length(), 0);
+}
 // Process command from client on the server
 
 void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buffer, int buffersize) {
@@ -281,10 +293,11 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         print(cli_name + " REQUESTING MESSAGES FOR " + tokens[1]);
         
         // Send all messages as that were requested
-        if (messages.find(tokens[1]) != messages.end()) 
+        if (messages.find(tokens[1]) != messages.end()) {
             for (std::string msg: messages[tokens[1]]) 
                 send(clientSocket, msg.c_str(), msg.length(), 0);
             messages[tokens[1]].clear();
+        }
         
     // SEND_MSG,<TO_GROUP_ID>,<FROM_GROUP_ID>,<MESSAGE_CONTENT>
     } else if((tokens[0].compare("SEND_MSG") == 0) && (tokens.size() > 2)) {
@@ -389,8 +402,41 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
                 send(pair.second->sock, msg.c_str(), msg.length(),0);
             }
         }
+    // CONNECT,<IP ADDRESS>,<PORT>
     } else if(tokens[0].compare("CONNECT") == 0 && tokens.size() == 3) {
         // make server connect
+        struct sockaddr_in serv_addr;
+        bzero((char *) &serv_addr, sizeof(serv_addr));
+        serv_addr.sin_family = AF_INET;
+
+        struct hostent *server;
+        server = gethostbyname(tokens[1].c_str());
+
+        bcopy((char *)server->h_addr,
+            (char *)&serv_addr.sin_addr.s_addr,
+            server->h_length);
+
+        serv_addr.sin_port = htons(atoi(tokens[2].c_str()));
+
+        int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+
+        int set = 1; 
+        if(setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &set, sizeof(set)) < 0) {
+            print("Failed to set SO_REUSEADDR for port %s\n" + tokens[2]);
+        }
+
+        if(connect(serverSocket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+            print("Failed to open socket to server: " + tokens[1]);
+        } else {
+            FD_SET(serverSocket, openSockets);
+
+            // And update the maximum file descriptor
+            *maxfds = std::max(*maxfds, serverSocket);
+
+            print("Opened socket to server: " + tokens[1]);
+            servers[serverSocket] = new Client(serverSocket);
+            queryServers(serverSocket);
+        }
 
     } else {
         log += " WITH AN UNKNOWN COMMAND";
@@ -472,12 +518,13 @@ std::string get_ip(){
 }
 
 void updateServer(){
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+    std::this_thread::sleep_for(std::chrono::minutes(1));
     
     // Connect all non connected servers
     for(auto const& pair : servers) {
         if (pair.second->name.empty()) {
             // send queryservers
+            queryServers(pair.second->sock);
 
             // put into 1 hop and 2 hop servers
         } else {
@@ -509,14 +556,18 @@ int main(int argc, char* argv[]) {
     struct sockaddr_in client_addr;
     socklen_t clientLen;
     
-    if(argc != 3) {
-        printf("Usage: chat_server <ip port servers> <ip port clients>\n");
-        exit(0);
+    if(argc != 2) {
+        if (argc != 3) {
+            printf("Usage: chat_server <ip port servers>\n");
+            exit(0);
+        } else {
+            HOST_NAME = argv[2];
+        }
     }
-    int clientPort = atoi(argv[2]);
 
     HOST_IP = get_ip();
     HOST_PORT = atoi(argv[1]);
+    int clientPort = HOST_PORT+1;
 
     // Setup sockets to listen to servers
     listenServerSock = open_socket(HOST_PORT);   // Listen to servers
@@ -528,6 +579,7 @@ int main(int argc, char* argv[]) {
 
     // Setup socket to listen to clients
     listenClientSock = open_socket(clientPort);  // Listen to clients
+
     if(listen(listenClientSock, BACKLOG) < 0) {
         print("LISTEN FAILED ON PORT: " + std::to_string(clientPort));
         exit(0);
@@ -571,6 +623,13 @@ int main(int argc, char* argv[]) {
 
                 } else {
                     close(clientSock);
+                    if(maxfds == clientSock) {
+                        for(auto const& p : clients) {
+                            maxfds = std::max(maxfds, p.second->sock);
+                        }
+                    }
+                    // And remove from the list of open sockets.
+                    FD_CLR(clientSock, &openSockets);
                     print("SERVER DOES NOT ACCEPT'S CLIENT ON SOCKET: UNABLE TO SELECT");
                 }
                 n--; // Decrement the number of sockets waiting to be dealt with
@@ -593,6 +652,13 @@ int main(int argc, char* argv[]) {
 
                 } else {
                     close(serverSock);
+                    if(maxfds == serverSock) {
+                        for(auto const& p : servers) {
+                            maxfds = std::max(maxfds, p.second->sock);
+                        }
+                    }
+                    // And remove from the list of open sockets.
+                    FD_CLR(serverSock, &openSockets);
                     std::string log = "SERVER DOES NOT ACCEPT'S SERVER ON SOCKET";
                     if (serverSock > 0) {
                         log += " " + std::to_string(serverSock) + ": TO MANY CONNECTIONS";
