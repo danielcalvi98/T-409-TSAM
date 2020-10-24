@@ -62,8 +62,6 @@ class Client {
     std::string name = "";  // Limit length of name of client's user
     std::string ip = "";         
     int port = 0;       
-    int incomming = 0;
-    int outgoing = 0;
 
     Client(int socket) : sock(socket){} 
 
@@ -77,18 +75,20 @@ class Client {
 // Quite often a simple array can be used as a lookup table, 
 // (indexed on socket no.) sacrificing memory for speed.
 
-std::map<int, Client*> servers; // Lookup table for per server information
-std::stack<int> remove_servers;
+std::map<int, Client*> servers; // Lookup table for per server information AKA 1 hop servers
+std::stack<int> remove_servers; 
 
 std::map<int, Client*> clients; // Lookup table for per Client information
-std::stack<int> remove_clients;
+std::stack<int> remove_clients; 
 
 std::map<std::string, std::vector<std::string>> messages; // Lookup table for per Client messages
+
+std::map<std::string, std::string> twoHopServers; // Lookup table for 2 hop servers, where 2 hop server is key and 1 hop is value
 
 std::ofstream server_log;
 std::ofstream write_message;
 
-std::string HOST_NAME = "P3_Group_112";
+std::string HOST_NAME = "P3_GROUP_112";
 std::string HOST_IP;
 int HOST_PORT;
 
@@ -200,16 +200,15 @@ void closeClient(int clientSocket, fd_set *openSockets, int *maxfds) {
     FD_CLR(clientSocket, openSockets);
 }
 
-
-void queryServers(int clientSocket) {
+void sendQueryServers(int clientSocket) {
     print("SENDING QUERYSERVERS TO CLIENT:" + std::to_string(clientSocket));
     std::string msg = "*QUERYSERVERS," + HOST_NAME + "#";
     send(clientSocket, msg.c_str(), msg.length(), 0);
 }
 
-void keepAlive(int clientSocket) {
+void sendKeepAlive(int clientSocket, int keepalive) {
     print("SENDING KEEPALIVE TO CLIENT:" + std::to_string(clientSocket));
-    std::string msg = "*KEEPALIVE," + std::to_string(servers[clientSocket]->outgoing) + "#";
+    std::string msg = "*KEEPALIVE," + std::to_string(keepalive) + "#";
     send(clientSocket, msg.c_str(), msg.length(), 0);
 }
 // Process command from client on the server
@@ -247,8 +246,8 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
     // QUERYSERVERS,<FROM_GROUP_ID>
     if((tokens[0].compare("QUERYSERVERS") == 0) && (tokens.size() == 2)) {
         print(tokens[1] + " REQUESTING QUERYSERVERS");
+
         std::string msg = "*CONNECTED,";
-        
         msg += HOST_NAME + ",";
         msg += HOST_IP + ",";
         msg += std::to_string(HOST_PORT) + ";";
@@ -260,40 +259,50 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
             msg += std::to_string(server.second->port) + ";";
         }
         msg += "#";
-
+        
         send(clientSocket, msg.c_str(), msg.length(), 0);
+        
+        if (servers[clientSocket]->name.empty()) {
+            sendQueryServers(clientSocket);
+        }
 
     // CONNECTED,<HOST_NAME>,<HOST_IP>,<HOST_PORT>;<OTHER_NAME>,<OTHER_IP>,<OTHER_PORT>;...;
     } else if(tokens[0].compare("CONNECTED") == 0) {
         servers[clientSocket]->name = tokens[1];
         servers[clientSocket]->ip   = tokens[2];
         servers[clientSocket]->port = atoi(tokens[3].c_str());
+        
         print("SERVER " + std::to_string(clientSocket) + " CONNECTED AS " + tokens[1]);
+
+        for(auto token = tokens.begin()+4; token < tokens.end(); token += 3) {
+            bool oneHop = false;
+            for(auto const &pair : servers) {
+                if (pair.second->name.compare(*token)==0) {
+                    oneHop = true;
+                    break;
+                }
+            }
+            if (!oneHop) {
+                twoHopServers[*token] = tokens[1]; // add new server to 2 hop servers, with 1 hop server as value
+            }
+        }
+
 
     // KEEPALIVE,<NUMBER_OF_MESSAGES>
     } else if ((tokens[0].compare("KEEPALIVE") == 0) && (tokens.size() == 2)) {
-        std::string log = cli_name + " REQUESTING KEEPALIVE";
+        print(cli_name + " REQUESTING KEEPALIVE");
 
-        // Check if digit
-        bool digit = true;
-        for (char& chr : tokens[1]) {
-            if (isdigit((int) chr)) continue;
-            digit = false;
+        if (tokens[1].compare("0") != 0) {
+            std::string msg = "*GET_MSG," + HOST_NAME + "#";
+            send(clientSocket, msg.c_str(), msg.length(), 0);
         }
-
-        if (digit) {
-            servers[clientSocket]->incomming = atoi(tokens[1].c_str());
-        } else {
-            log += " - WITH INVALID ARGUMENT";
-        }
-        print(log);
 
     // GET_MSG,<GROUP_ID>
     } else if((tokens[0].compare("GET_MSG") == 0) && (tokens.size() == 2)) {
         print(cli_name + " REQUESTING MESSAGES FOR " + tokens[1]);
         
         // Send all messages as that were requested
-        if (messages.find(tokens[1]) != messages.end()) {
+        if (messages.count(tokens[1])) {
             for (std::string msg: messages[tokens[1]]) 
                 send(clientSocket, msg.c_str(), msg.length(), 0);
             messages[tokens[1]].clear();
@@ -342,7 +351,9 @@ void serverCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         print(cli_name + " SENDING STATUSRESP");
 
     } else {
-        print(cli_name + " WITH AN UNKNOWN COMMAND");
+        std::string msg;
+        for(auto i = tokens.begin() + 2; i != tokens.end(); i++) msg += " " + *i;
+        print(cli_name + " WITH AN UNKNOWN COMMAND:" + msg);
     }
 }
 
@@ -381,26 +392,43 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 
     } else if(tokens[0].compare("GETMSG") == 0  && (tokens.size() == 2)) {
         print("CLIENT REQUESTING A MESSAGE FROM " + tokens[1]);
-        
-        // Send all message
-        if (messages.find(tokens[1]) != messages.end()) {
-            std::string msg = messages[tokens[1]].back();
-            send(clientSocket, msg.c_str(), msg.length(), 0);
+
+        std::string statusreq = "*STATUSREQ," + HOST_NAME + "#";
+        for (auto const &pair : servers) {
+            if (pair.second->name.compare(tokens[1]) == 0) {
+                send(pair.second->sock, statusreq.c_str(), statusreq.length(), 0);
+            }
         }
-        messages[tokens[1]].pop_back();
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+        if (messages.count(tokens[1])) {
+            std::string msg = messages[tokens[1]].front();
+            send(clientSocket, msg.c_str(), msg.length(), 0);
+            messages[tokens[1]].erase(messages[tokens[1]].begin());
+        }
 
     } else if(tokens[0].compare("SENDMSG") == 0) {
         print("CLIENT SENDING MESSAGE TO " + tokens[1]);
+        
+        std::string response = "MESSAG SENT TO " + tokens[1];
+        send(clientSocket, response.c_str(), response.length(), 0);
 
+        std::string msg;
+        for(auto i = tokens.begin() + 2; i != tokens.end(); i++) 
+            msg += *i + " ";
+        msg.pop_back();
+        msg = "*SEND_MSG," + tokens[1] + "," + HOST_NAME + "," + msg + "#";
+
+        bool msgSent = false;
         for(auto const& pair : servers) {
             if(pair.second->name.compare(tokens[1]) == 0) {
-                std::string msg;
-                for(auto i = tokens.begin()+2; i != tokens.end(); i++) 
-                    msg += *i + " ";
-                msg.pop_back();
-                msg = "*SEND_MSG," + pair.second->name + "," + HOST_NAME + "," + msg + "#";
                 send(pair.second->sock, msg.c_str(), msg.length(),0);
+                msgSent = true;
             }
+        }
+        if (!msgSent) {
+            messages[tokens[1]].push_back(msg);
         }
     // CONNECT,<IP ADDRESS>,<PORT>
     } else if(tokens[0].compare("CONNECT") == 0 && tokens.size() == 3) {
@@ -435,12 +463,13 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
 
             print("Opened socket to server: " + tokens[1]);
             servers[serverSocket] = new Client(serverSocket);
-            queryServers(serverSocket);
+            sendQueryServers(serverSocket);
         }
 
     } else {
-        log += " WITH AN UNKNOWN COMMAND";
-        print(log);
+        std::string msg;
+        for(auto i = tokens.begin() + 2; i != tokens.end(); i++) msg += " " + *i;
+        print("CLIENT WITH AN UNKNOWN COMMAND:" + msg);
     }
 }
 
@@ -520,23 +549,26 @@ std::string get_ip(){
 void updateServer(){
     std::this_thread::sleep_for(std::chrono::minutes(1));
     
-    // Connect all non connected servers
-    for(auto const& pair : servers) {
+    for (auto const& pair : servers) {
+        // Connect all non connected servers
         if (pair.second->name.empty()) {
-            // send queryservers
-            queryServers(pair.second->sock);
+            sendQueryServers(pair.second->sock);
+        }
 
-            // put into 1 hop and 2 hop servers
+        // Send to all 1 hop servers that there are incomming messages
+        if (messages.count(pair.second->name)) {
+            sendKeepAlive(pair.second->sock, messages[pair.second->name].size());
         } else {
-            if(messages.find(pair.second->name) != messages.end()) {
-                std::string msg = "KEEPALIVE," + std::to_string(messages[pair.second->name].size());
-                send(pair.second->sock, msg.c_str(), msg.length(),0);
-                // send queryservers ? maybe
-
-                // if send queryservers, put into 1 hop and 2 hop severs
-            }
+            sendKeepAlive(pair.second->sock, 0);
         }
     }
+
+    // 2 hop messages 
+    // for (auto const &msg : messages) {
+    //     if (twoHopServers.count(msg.first)) {
+            
+    //     }
+    // }
 }
 
 int main(int argc, char* argv[]) {
