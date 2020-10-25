@@ -513,7 +513,8 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
         tv.tv_sec = 0;
         tv.tv_usec = 100 * 1000; // 200 msec
         setsockopt(serverSocket, SOL_SOCKET, SO_SNDTIMEO, (char *) &tv, sizeof(tv));
-
+        
+        servers[serverSocket] = new Client(serverSocket); // Create new client before client has the chance to disconnect
         if ((connect(serverSocket, (struct sockaddr *) &serv_addr, sizeof(serv_addr))) >= 0) {
             print("CONNECTED TO SERVER ON IP: " + tokens[1] + ", PORT: " + tokens[2]);
             FD_SET(serverSocket, openSockets);
@@ -521,11 +522,10 @@ void clientCommand(int clientSocket, fd_set *openSockets, int *maxfds, char *buf
             // And update the maximum file descriptor
             *maxfds = std::max(*maxfds, serverSocket);
 
-            servers[serverSocket] = new Client(serverSocket);
-
             sendQueryServers(serverSocket);
         } 
         else {
+            servers.erase(serverSocket); // Erase client since it couldn't connect
             print("FAILED TO CONNECT TO SERVER ON IP: " + tokens[1] + ", PORT: " + tokens[2]);
         }
         
@@ -751,6 +751,8 @@ int main(int argc, char* argv[]) {
                     clients[clientSock] = new Client(clientSock);
 
                 } else {
+                    std::string unknownClient = "Poopy-di scoop Scoop-diddy-whoop Whoop-di-scoop-di-poop Poop-di-scoopty Scoopty-whoop Whoopity-scoop whoop-poop Poop-diddy whoop-scoop Poop poop Scoop-diddy-whoop Whoop-diddy-scoop Whoop-diddy-scoop poop. Client for tsamgroup_112";
+                    send(clientSock, unknownClient.c_str(), unknownClient.length(), 0);
                     close(clientSock);
                     if (maxfds == clientSock) {
                         for(auto const& p : clients) {
