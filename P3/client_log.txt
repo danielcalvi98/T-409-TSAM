@@ -142,3 +142,51 @@ imself.2020-10-21 18:20:42 S3_Group_69 Bringo
 2020-10-21 18:20:42 S3_Group_69 Bringo
 2020-10-23 04:03:17 SERVER
 2020-10-23 04:03:42 *SEND_MSG,P3_Group_112,SERVER,HELLO THERE...#
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 ƒøt
+HÿÈu.L‰ðëˆT$H‰ÎIVëL‰òŠHBHÿÆˆ
+Æ
+2020-10-23 04:52:58 ÿÿH…¨ïÿÿH‰…`ïÿÿH‹½`ïÿÿè$d
+2020-10-23 04:52:58 I¹ ñÿ
+2020-10-23 04:52:58 uëM…À„
+
+2020-10-23 04:52:58 è“B
+2020-10-23 04:52:58 ‰EÀ‹MÌu¸é¥ýÿÿ
+2020-10-23 04:52:58 Â‰ÁƒàïÀéƒá	ÊÁâ	ÐAˆ„$
+2020-10-23 04:52:58 ¶PHƒÁHƒÀ¶9@8×tä@„ÿt$¶„Ò„—þÿÿHƒÀ€ú:uì¶„Ò„ƒþÿÿL‰áëÏ€ú:„zþÿÿ„ÒuÏfD
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 Á¶F„ÀtKHÁáHÁ¶F„Àt<HÁáLVHÁ¶F„Àt#HÁáIƒÂHÈH‰Áá
+2020-10-23 04:52:58 €<$
+2020-10-23 04:52:58 H‹@H‰…0ÿÿÿ„G
+2020-10-23 04:52:58 „þÿÿI‹@
+2020-10-23 04:52:58 ÿÿHEH‰…pÿÿÿHE˜H‰…hÿÿÿHE H‰…`ÿÿÿH‰ÈÇ
+2020-10-23 04:52:58 ¿à
+2020-10-23 04:52:58 àÓâÓàAG…ÐA‰Gu.H‹D$`Hƒøÿt#IƒþþtIƒþÿ„ë
+2020-10-23 04:52:58 A¹0
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 …Òt@
+2020-10-23 04:52:58 „
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 t‹D5
+2020-10-23 04:52:58 $„çüÿÿë—H‹$H9D$@…ÊþÿÿH‰ßè 
+2020-10-23 04:52:58 
+2020-10-23 04:52:58 ÿÿÿD
+2020-10-23 04:52:58 H·ÿÿ(·ÿÿÀµÿÿÀµÿÿ·ÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿ·ÿÿø¶ÿÿè¶ÿÿØ¶ÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿÈ¶ÿÿÀµÿÿ¸¶ÿÿ¨¶ÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿÀµÿÿ¸µÿÿ
+2020-10-23 04:52:58 s mostly of use for maintainers to test new versions
+of this helper program; chances are you did not intend to run this program.
+
+  --list                list all dependencies and how they are resolved
+  --verify              verify that given object really is a dynamically linked
+			object we can handle
+  --inhibit-cache       Do not use /etc/ld.so.cache
+  --library-path PATH   use given PATH instead of content of the environment
+			variable LD_LIBRARY_PATH
+  --inhibit-rpath LIST  ignore RUNPATH and RPATH information in object names
+			in LIST
+  --audit LIST          use objects named in LIST as auditors
+
+2020-10-23 04:52:58 L?ÿÿÌ
+2020-10-23 04:52:58 ƒG@~
+0A(A BBBH
