@@ -1,6 +1,0 @@
-client
-client.cpp
-P1-TSAM.pdf
-server
-server.cpp
-testFile.txt
